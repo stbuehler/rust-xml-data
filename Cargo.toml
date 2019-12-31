@@ -1,0 +1,8 @@
+[workspace]
+members = [
+	"xml-data",
+	"xml-data-derive",
+]
+
+[patch.crates-io]
+xml-data-derive = { path = "xml-data-derive" }

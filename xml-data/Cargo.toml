@@ -1,0 +1,32 @@
+[package]
+name = "xml-data"
+version = "0.0.1"
+authors = ["Stefan Bühler <stbuehler@web.de>"]
+edition = "2018"
+#
+description = "Generic XML parsing and serializing"
+documentation = "https://docs.rs/xml-data"
+homepage = "https://github.com/stbuehler/rust-xml-data"
+repository = "https://github.com/stbuehler/rust-xml-data"
+categories = ["data-structures","encoding","parsing"]
+keywords = ["xml"]
+readme = "README.md"
+license = "MIT"
+
+[features]
+default = ["derive"]
+derive = ["xml-data-derive"]
+# only for internal usage
+_private-test = []
+
+[dependencies]
+quick-xml = { version = "0.17", optional = true, features = ["encoding"] }
+xml-data-derive = { version = "0.0.1", optional = true }
+
+[dev-dependencies]
+version-sync = "0.8.1"
+# enable features in our own crate for testing
+xml-data = { path = ".", features = ["derive", "quick-xml"] }
+
+[package.metadata.docs.rs]
+all-features = true
