@@ -1,10 +1,10 @@
 use crate::{
+	errors,
 	parser::{
 		ElementParser,
 		ElementState,
 	},
 	Result,
-	errors,
 };
 
 /// extend `ElementParser` trait with convenience methods
@@ -23,5 +23,4 @@ pub trait ElementParserExt: ElementParser {
 	}
 }
 
-impl<P: ElementParser> ElementParserExt for P {
-}
+impl<P: ElementParser> ElementParserExt for P {}

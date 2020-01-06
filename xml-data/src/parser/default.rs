@@ -1,8 +1,6 @@
-use crate::{
-	parser::{
-		ElementState,
-		InnerState,
-	},
+use crate::parser::{
+	ElementState,
+	InnerState,
 };
 
 /// Parsable element

@@ -1,10 +1,10 @@
 use crate::{
+	errors,
 	parser::{
-		ElementState,
 		ElementParser,
+		ElementState,
 	},
 	Result,
-	errors,
 };
 use std::borrow::Cow;
 

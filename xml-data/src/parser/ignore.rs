@@ -1,7 +1,7 @@
 use crate::{
 	parser::{
-		ElementState,
 		ElementParser,
+		ElementState,
 	},
 	Result,
 };

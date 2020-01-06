@@ -14,22 +14,17 @@ mod value;
 
 #[cfg(feature = "derive")]
 pub use xml_data_derive::{
-	SerializerElement as Element,
 	ParserInner as Inner,
+	SerializerElement as Element,
 };
-
 
 pub use self::{
 	core::{
 		Element,
 		Serializer,
 	},
-	fixed_element::{
-		FixedElement,
-	},
-	inner::{
-		Inner,
-	},
+	fixed_element::FixedElement,
+	inner::Inner,
 	value::{
 		Value,
 		ValueDefault,

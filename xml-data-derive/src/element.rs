@@ -1,13 +1,13 @@
-use crate::{
-	attributes::{
-		all_attributes,
-		string_lit,
-		single_nested,
-	},
+use crate::attributes::{
+	all_attributes,
+	single_nested,
+	string_lit,
 };
 
 use proc_macro2::Span;
 use syn::{
+	parse_quote,
+	spanned::Spanned,
 	Data,
 	DataStruct,
 	DeriveInput,
@@ -16,9 +16,7 @@ use syn::{
 	Lit,
 	NestedMeta,
 	Path,
-	spanned::Spanned,
 	Type,
-	parse_quote,
 };
 
 pub struct FieldAttribute {
@@ -54,7 +52,10 @@ impl Field {
 				is_attr = true;
 				let new_attr_key = string_lit(&m);
 				if new_attr_key.is_some() {
-					assert!(attr_key.is_none(), "Already have #[xml_data(attr(\"...\"))]");
+					assert!(
+						attr_key.is_none(),
+						"Already have #[xml_data(attr(\"...\"))]"
+					);
 				}
 				attr_key = new_attr_key
 			} else if m.path().is_ident("attr_string") {
@@ -71,7 +72,9 @@ impl Field {
 				optional: attr_optional,
 				is_string: attr_is_string,
 			})
-		} else { None };
+		} else {
+			None
+		};
 
 		Field {
 			name,
@@ -107,7 +110,7 @@ impl Meta {
 					assert!(tag.is_none(), "Already have #[xml_data(tag)]");
 					tag = Some(t.value());
 					continue;
-				}
+				},
 				NestedMeta::Lit(_) => panic!("invalid literal in #[xml_data(..., ...)]"),
 				NestedMeta::Meta(m) => m,
 			};
@@ -133,15 +136,21 @@ impl Meta {
 		}
 		// tag is ignored for `Inner`
 		let tag = tag.unwrap_or_else(|| element.ident.to_string());
-		let xml_data_crate = xml_data_crate.unwrap_or_else(|| parse_quote!{ xml_data });
+		let xml_data_crate = xml_data_crate.unwrap_or_else(|| parse_quote! { xml_data });
 
 		let fields = match &element.data {
-			Data::Struct(DataStruct { fields: Fields::Named(n), .. } ) => {
-				n.named.iter().map(|field| {
-					Field::parse(field.ident.clone().unwrap(), &field)
-				}).collect()
-			},
-			Data::Struct(DataStruct { fields: Fields::Unit, .. } ) => {
+			Data::Struct(DataStruct {
+				fields: Fields::Named(n),
+				..
+			}) => n
+				.named
+				.iter()
+				.map(|field| Field::parse(field.ident.clone().unwrap(), &field))
+				.collect(),
+			Data::Struct(DataStruct {
+				fields: Fields::Unit,
+				..
+			}) => {
 				// luckily unit structs now accept the `... {}` construction too.
 				Vec::new()
 			},

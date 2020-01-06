@@ -2,8 +2,8 @@ use crate::{
 	parser::{
 		Element,
 		ElementParser,
-		Inner,
 		ElementState,
+		Inner,
 	},
 	Result,
 };
@@ -27,7 +27,11 @@ pub trait InnerState: Default {
 	/// Try parsing an element with the given tag
 	///
 	/// Should not fail if it doesn't recognize the tag; instead it needs to return the parser.
-	fn parse_inner_node<P: ElementParser>(&mut self, tag: &str, parser: P) -> Result<InnerParseResult<P>> {
+	fn parse_inner_node<P: ElementParser>(
+		&mut self,
+		tag: &str,
+		parser: P,
+	) -> Result<InnerParseResult<P>> {
 		let _ = tag;
 		Ok(InnerParseResult::Next(parser))
 	}
@@ -35,7 +39,10 @@ pub trait InnerState: Default {
 	/// Try parsing inner text
 	///
 	/// Should not fail if it doesn't take text (but may fail if it does but can't parse it).
-	fn parse_inner_text<'t>(&mut self, text: Cow<'t, str>) -> Result<InnerParseResult<Cow<'t, str>>> {
+	fn parse_inner_text<'t>(
+		&mut self,
+		text: Cow<'t, str>,
+	) -> Result<InnerParseResult<Cow<'t, str>>> {
 		Ok(InnerParseResult::Next(text))
 	}
 
@@ -47,7 +54,10 @@ pub trait InnerState: Default {
 impl InnerState for String {
 	type Output = Self;
 
-	fn parse_inner_text<'t>(&mut self, text: Cow<'t, str>) -> Result<InnerParseResult<Cow<'t, str>>> {
+	fn parse_inner_text<'t>(
+		&mut self,
+		text: Cow<'t, str>,
+	) -> Result<InnerParseResult<Cow<'t, str>>> {
 		if self.is_empty() {
 			*self = text.into_owned();
 		} else {
@@ -68,7 +78,10 @@ impl Inner for String {
 impl InnerState for Cow<'_, str> {
 	type Output = Self;
 
-	fn parse_inner_text<'t>(&mut self, text: Cow<'t, str>) -> Result<InnerParseResult<Cow<'t, str>>> {
+	fn parse_inner_text<'t>(
+		&mut self,
+		text: Cow<'t, str>,
+	) -> Result<InnerParseResult<Cow<'t, str>>> {
 		if self.is_empty() {
 			*self = Cow::Owned(text.into_owned());
 		} else {
@@ -104,12 +117,16 @@ impl<E: ElementState> Default for ParseElementOnce<E> {
 impl<E: ElementState> InnerState for ParseElementOnce<E> {
 	type Output = E::Output;
 
-	fn parse_inner_node<P: ElementParser>(&mut self, tag: &str, parser: P) -> Result<InnerParseResult<P>> {
+	fn parse_inner_node<P: ElementParser>(
+		&mut self,
+		tag: &str,
+		parser: P,
+	) -> Result<InnerParseResult<P>> {
 		if self.element.is_none() {
 			if let Some(mut state) = E::parse_element_start(tag) {
 				parser.parse_element_state(&mut state)?;
 				self.element = Some(state.parse_element_finish()?);
-				return Ok(InnerParseResult::Success)
+				return Ok(InnerParseResult::Success);
 			}
 		}
 		Ok(InnerParseResult::Next(parser))
@@ -142,12 +159,16 @@ impl<E: ElementState> Default for ParseElementOptional<E> {
 impl<E: ElementState> InnerState for ParseElementOptional<E> {
 	type Output = Option<E::Output>;
 
-	fn parse_inner_node<P: ElementParser>(&mut self, tag: &str, parser: P) -> Result<InnerParseResult<P>> {
+	fn parse_inner_node<P: ElementParser>(
+		&mut self,
+		tag: &str,
+		parser: P,
+	) -> Result<InnerParseResult<P>> {
 		if self.element.is_none() {
 			if let Some(mut state) = E::parse_element_start(tag) {
 				parser.parse_element_state(&mut state)?;
 				self.element = Some(state.parse_element_finish()?);
-				return Ok(InnerParseResult::Success)
+				return Ok(InnerParseResult::Success);
 			}
 		}
 		Ok(InnerParseResult::Next(parser))
@@ -178,7 +199,11 @@ impl<E: ElementState> Default for ParseElementList<E> {
 impl<E: ElementState> InnerState for ParseElementList<E> {
 	type Output = Vec<E::Output>;
 
-	fn parse_inner_node<P: ElementParser>(&mut self, tag: &str, parser: P) -> Result<InnerParseResult<P>> {
+	fn parse_inner_node<P: ElementParser>(
+		&mut self,
+		tag: &str,
+		parser: P,
+	) -> Result<InnerParseResult<P>> {
 		if let Some(mut state) = E::parse_element_start(tag) {
 			parser.parse_element_state(&mut state)?;
 			self.elements.push(state.parse_element_finish()?);
@@ -211,7 +236,11 @@ impl<I: InnerState> Default for ParseInnerOptional<I> {
 impl<I: InnerState> InnerState for ParseInnerOptional<I> {
 	type Output = Option<I::Output>;
 
-	fn parse_inner_node<P: ElementParser>(&mut self, tag: &str, parser: P) -> Result<InnerParseResult<P>> {
+	fn parse_inner_node<P: ElementParser>(
+		&mut self,
+		tag: &str,
+		parser: P,
+	) -> Result<InnerParseResult<P>> {
 		if self.inner.is_none() {
 			let mut state = I::default();
 			match state.parse_inner_node(tag, parser)? {
@@ -228,7 +257,10 @@ impl<I: InnerState> InnerState for ParseInnerOptional<I> {
 		}
 	}
 
-	fn parse_inner_text<'t>(&mut self, text: Cow<'t, str>) -> Result<InnerParseResult<Cow<'t, str>>> {
+	fn parse_inner_text<'t>(
+		&mut self,
+		text: Cow<'t, str>,
+	) -> Result<InnerParseResult<Cow<'t, str>>> {
 		if self.inner.is_none() {
 			let mut state = I::default();
 			match state.parse_inner_text(text)? {

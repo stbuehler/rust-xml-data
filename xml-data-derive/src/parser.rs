@@ -1,15 +1,21 @@
-use crate::{
-	element::{
-		Field,
-		FieldAttribute,
-		Meta,
-	},
+use crate::element::{
+	Field,
+	FieldAttribute,
+	Meta,
 };
 use proc_macro2::TokenStream;
-use quote::{quote, quote_spanned};
+use quote::{
+	quote,
+	quote_spanned,
+};
 
 pub fn build_parser(meta: &Meta, impl_element: bool) -> TokenStream {
-	let Meta { xml_data_crate, name, tag, .. } = meta;
+	let Meta {
+		xml_data_crate,
+		name,
+		tag,
+		..
+	} = meta;
 
 	let parse_success = if impl_element {
 		quote! { Ok(()) }
@@ -17,95 +23,115 @@ pub fn build_parser(meta: &Meta, impl_element: bool) -> TokenStream {
 		quote! { Ok(InnerParseResult::Success) }
 	};
 
-	let state_fields: TokenStream = meta.fields.iter().map(|field| {
-		let Field { name, span, ty, .. } = field;
-		if let Some(attr) = &field.attr {
-			if attr.optional {
-				// already optional
-				quote_spanned! {*span=>
-					#name: #ty,
+	let state_fields: TokenStream = meta
+		.fields
+		.iter()
+		.map(|field| {
+			let Field { name, span, ty, .. } = field;
+			if let Some(attr) = &field.attr {
+				if attr.optional {
+					// already optional
+					quote_spanned! {*span=>
+						#name: #ty,
+					}
+				} else {
+					quote_spanned! {*span=>
+						#name: Option<#ty>,
+					}
 				}
 			} else {
+				// inner
 				quote_spanned! {*span=>
-					#name: Option<#ty>,
+					#name: <#ty as Inner>::ParseState,
 				}
 			}
-		} else {
-			// inner
-			quote_spanned! {*span=>
-				#name: <#ty as Inner>::ParseState,
-			}
-		}
-	}).collect();
-	let finish: TokenStream = meta.fields.iter().map(|field| {
-		let Field { name, span, .. } = field;
-		if let Some(attr) = &field.attr {
-			let FieldAttribute { key: attr_key, .. } = attr;
-			if attr.optional {
-				quote_spanned! {*span=>
-					#name: self.#name,
+		})
+		.collect();
+	let finish: TokenStream = meta
+		.fields
+		.iter()
+		.map(|field| {
+			let Field { name, span, .. } = field;
+			if let Some(attr) = &field.attr {
+				let FieldAttribute { key: attr_key, .. } = attr;
+				if attr.optional {
+					quote_spanned! {*span=>
+						#name: self.#name,
+					}
+				} else {
+					quote_spanned! {*span=>
+						#name: match self.#name {
+							Some(v) => v,
+							None => return Err(errors::missing_attribute(#attr_key)),
+						},
+					}
 				}
 			} else {
+				// inner
 				quote_spanned! {*span=>
-					#name: match self.#name {
-						Some(v) => v,
-						None => return Err(errors::missing_attribute(#attr_key)),
-					},
+					#name: self.#name.parse_inner_finish()?,
 				}
 			}
-		} else {
-			// inner
-			quote_spanned! {*span=>
-				#name: self.#name.parse_inner_finish()?,
-			}
-		}
-	}).collect();
+		})
+		.collect();
 
-	let el_attrs: TokenStream = meta.fields.iter().filter_map(|field| {
-		if let Some(attr) = &field.attr {
-			let FieldAttribute { key: attr_key, .. } = attr;
-			let Field { name, span, .. } = field;
-			let value_t = if attr.is_string {
-				quote!(ValueString)
+	let el_attrs: TokenStream = meta
+		.fields
+		.iter()
+		.filter_map(|field| {
+			if let Some(attr) = &field.attr {
+				let FieldAttribute { key: attr_key, .. } = attr;
+				let Field { name, span, .. } = field;
+				let value_t = if attr.is_string {
+					quote!(ValueString)
+				} else {
+					quote!(ValueDefault)
+				};
+				Some(quote_spanned! {*span=>
+					if #attr_key == key && self.#name.is_none() {
+						self.#name = Some(#value_t::parse_value(value)?);
+						return Ok(())
+					}
+				})
 			} else {
-				quote!(ValueDefault)
-			};
-			Some(quote_spanned! {*span=>
-				if #attr_key == key && self.#name.is_none() {
-					self.#name = Some(#value_t::parse_value(value)?);
-					return Ok(())
-				}
-			})
-		} else {
-			None
-		}
-	}).collect();
-	let el_inner_node: TokenStream = meta.fields.iter().filter_map(|field| {
-		if field.attr.is_none() {
-			let Field { name, span, .. } = field;
-			Some(quote_spanned! {*span=>
-				let parser = match self.#name.parse_inner_node(tag, parser)? {
-					InnerParseResult::Next(p) => p,
-					InnerParseResult::Success => return #parse_success,
-				};
-			})
-		} else {
-			None
-		}
-	}).collect();
-	let el_inner_text: TokenStream = meta.fields.iter().filter_map(|field| {
-	if field.attr.is_none() {
-			let Field { name, span, .. } = field;
-			Some(quote_spanned! {*span=>
-				let text = match self.#name.parse_inner_text(text)? {
-					InnerParseResult::Next(t) => t,
-					InnerParseResult::Success => return #parse_success,
-				};
-			})
-		} else {
-			None
-		}
-	}).collect();
+				None
+			}
+		})
+		.collect();
+	let el_inner_node: TokenStream = meta
+		.fields
+		.iter()
+		.filter_map(|field| {
+			if field.attr.is_none() {
+				let Field { name, span, .. } = field;
+				Some(quote_spanned! {*span=>
+					let parser = match self.#name.parse_inner_node(tag, parser)? {
+						InnerParseResult::Next(p) => p,
+						InnerParseResult::Success => return #parse_success,
+					};
+				})
+			} else {
+				None
+			}
+		})
+		.collect();
+	let el_inner_text: TokenStream = meta
+		.fields
+		.iter()
+		.filter_map(|field| {
+			if field.attr.is_none() {
+				let Field { name, span, .. } = field;
+				Some(quote_spanned! {*span=>
+					let text = match self.#name.parse_inner_text(text)? {
+						InnerParseResult::Next(t) => t,
+						InnerParseResult::Success => return #parse_success,
+					};
+				})
+			} else {
+				None
+			}
+		})
+		.collect();
 
 	let handle_unknown_attribute = if meta.ignore_unknown_attribute {
 		quote! {

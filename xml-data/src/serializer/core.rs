@@ -1,6 +1,4 @@
-use crate::{
-	Result,
-};
+use crate::Result;
 use std::borrow::Cow;
 
 /// Element that can be serialized.

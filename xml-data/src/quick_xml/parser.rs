@@ -1,12 +1,12 @@
 use crate::{
+	errors,
 	extensions::*,
 	parser::{
+		Element,
 		ElementParser,
 		ElementState,
-		Element,
 	},
 	Result,
-	errors,
 };
 use quick_xml::events::Event;
 use std::io::BufRead;
@@ -36,7 +36,9 @@ impl<'a, 'r, B: BufRead> Parser<'a, 'r, B> {
 	}
 
 	fn peek(&mut self) -> Result<Event<'a>> {
-		if self.pending.is_none() { self.shift()?; }
+		if self.pending.is_none() {
+			self.shift()?;
+		}
 		Ok(self.pending.clone().expect("can't be None"))
 	}
 
@@ -67,10 +69,13 @@ impl<'a, 'r, B: BufRead> Parser<'a, 'r, B> {
 				Event::End(_) => {
 					return Err(errors::unexpected_end());
 				},
-				Event::Start(s)|Event::Empty(s) => {
+				Event::Start(s) | Event::Empty(s) => {
 					let tag = self.inner.decode(s.name());
 					let mut finished_inner = false;
-					let p = PRef { parser: self, finished_element: &mut finished_inner };
+					let p = PRef {
+						parser: self,
+						finished_element: &mut finished_inner,
+					};
 					output = Some(p.parse_element::<S>(&tag)?);
 					if !finished_inner {
 						return Err(errors::inner_element_not_parsed(&tag));
@@ -93,7 +98,7 @@ impl<'a, 'r, B: BufRead> Parser<'a, 'r, B> {
 				// ignore comments
 				Event::Comment(_) => (),
 				// text+cdata
-				Event::Text(t)|Event::CData(t) => {
+				Event::Text(t) | Event::CData(t) => {
 					let t = t.unescape_and_decode(self.inner)?;
 					if !t.trim().is_empty() {
 						return Err(errors::unexpected_text());
@@ -145,10 +150,13 @@ impl<'x, 'a, 'r, B: BufRead> ElementParser for PRef<'x, 'a, 'r, B> {
 					*self.finished_element = true;
 					return Ok(());
 				},
-				Event::Start(s)|Event::Empty(s) => {
+				Event::Start(s) | Event::Empty(s) => {
 					let tag = self.parser.inner.decode(s.name());
 					let mut finished_inner = false;
-					let p = PRef { parser: self.parser, finished_element: &mut finished_inner };
+					let p = PRef {
+						parser: self.parser,
+						finished_element: &mut finished_inner,
+					};
 					state.parse_element_inner_node(&tag, p)?;
 					if !finished_inner {
 						return Err(errors::inner_element_not_parsed(&tag));
@@ -163,7 +171,7 @@ impl<'x, 'a, 'r, B: BufRead> ElementParser for PRef<'x, 'a, 'r, B> {
 				// ignore comments
 				Event::Comment(_) => (),
 				// text+cdata
-				Event::Text(t)|Event::CData(t) => {
+				Event::Text(t) | Event::CData(t) => {
 					let t = t.unescape_and_decode(self.parser.inner)?;
 					state.parse_element_inner_text(t.into())?;
 				},
@@ -176,8 +184,10 @@ impl<'x, 'a, 'r, B: BufRead> ElementParser for PRef<'x, 'a, 'r, B> {
 
 #[cfg(test)]
 mod test {
-	use crate::Result;
-	use crate::test_struct::*;
+	use crate::{
+		test_struct::*,
+		Result,
+	};
 
 	fn parse<T: super::Element>(input: &str) -> Result<T> {
 		let mut r = quick_xml::Reader::from_reader(std::io::Cursor::new(input));

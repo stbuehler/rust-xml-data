@@ -6,21 +6,24 @@ use syn::{
 };
 
 pub fn all_attributes(attrs: &[Attribute]) -> impl Iterator<Item = NestedMeta> + '_ {
-	attrs.iter().filter_map(|attr| {
-		if attr.path.is_ident("xml_data") {
-			match attr.parse_meta() {
-				Ok(Meta::List(meta)) => Some(meta.nested.into_iter()),
-				Ok(_) => {
-					panic!("expected #[xml_data(...)]");
+	attrs
+		.iter()
+		.filter_map(|attr| {
+			if attr.path.is_ident("xml_data") {
+				match attr.parse_meta() {
+					Ok(Meta::List(meta)) => Some(meta.nested.into_iter()),
+					Ok(_) => {
+						panic!("expected #[xml_data(...)]");
+					},
+					Err(err) => {
+						panic!("#[xml_data]: {}", err);
+					},
 				}
-				Err(err) => {
-					panic!("#[xml_data]: {}", err);
-				}
+			} else {
+				None
 			}
-		} else {
-			None
-		}
-	}).flatten()
+		})
+		.flatten()
 }
 
 pub fn single_nested(meta: &Meta) -> Option<&NestedMeta> {
@@ -31,7 +34,7 @@ pub fn single_nested(meta: &Meta) -> Option<&NestedMeta> {
 				panic!("only single argument allowed for argument");
 			}
 			l.nested.first()
-		}
+		},
 		Meta::NameValue(_) => panic!("Expect single nested argument"),
 	}
 }
@@ -48,7 +51,7 @@ pub fn single_lit(meta: &Meta) -> Option<&syn::Lit> {
 				Some(NestedMeta::Meta(m)) => single_lit(m),
 				None => None,
 			}
-		}
+		},
 		Meta::NameValue(nv) => Some(&nv.lit),
 	}
 }

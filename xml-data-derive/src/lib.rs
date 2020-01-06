@@ -27,7 +27,10 @@ mod parser;
 mod serialize;
 
 use proc_macro::TokenStream;
-use syn::{parse_macro_input, DeriveInput};
+use syn::{
+	parse_macro_input,
+	DeriveInput,
+};
 
 /// Derive `xml-data::{parser,serializer}::Element`
 #[proc_macro_derive(Element, attributes(xml_data))]

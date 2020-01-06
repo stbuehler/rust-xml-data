@@ -29,8 +29,8 @@ pub use xml_data_derive::{
 
 pub use self::{
 	core::{
-		ElementState,
 		ElementParser,
+		ElementState,
 	},
 	default::{
 		Element,
@@ -38,21 +38,15 @@ pub use self::{
 		Inner,
 		InnerDefaultParseState,
 	},
-	extensions::{
-		ElementParserExt,
-	},
-	fixed_element::{
-		FixedElementState,
-	},
-	ignore::{
-		IgnoreElement,
-	},
+	extensions::ElementParserExt,
+	fixed_element::FixedElementState,
+	ignore::IgnoreElement,
 	inner::{
-		InnerState,
 		InnerParseResult,
+		InnerState,
+		ParseElementList,
 		ParseElementOnce,
 		ParseElementOptional,
-		ParseElementList,
 		ParseInnerOptional,
 	},
 	value::{

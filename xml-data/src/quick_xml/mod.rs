@@ -7,11 +7,9 @@ mod serializer;
 pub use quick_xml;
 
 pub use self::{
-	parser::{
-		Parser,
-	},
+	parser::Parser,
 	serializer::{
-		Serializer,
 		serialize_document,
+		Serializer,
 	},
 };

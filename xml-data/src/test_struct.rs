@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
-#[derive(crate::Element)]
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(crate::Element, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[xml_data("data", crate(crate))]
 pub struct Data {
 	#[xml_data(attr_string)]
@@ -12,8 +11,7 @@ pub struct Data {
 	pub inner: DataInner,
 }
 
-#[derive(crate::Inner)]
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(crate::Inner, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[xml_data(crate(crate))]
 pub struct DataInner {
 	pub foo2: Option<Foo>,
@@ -25,9 +23,6 @@ impl Data {
 <data key="abc" other="42"><foo>
 		<unknown/>
 	</foo></data>"#;
-
-	pub const TEST_SERIALIZE_DOCUMENT_1: &'static str = r#"<?xml version="1.1" encoding="utf-8"?><data key="abc" other="42"><foo/></data>"#;
-
 	pub const TEST_RESULT_1: Self = Self {
 		key: Cow::Borrowed("abc"),
 		other: 42,
@@ -37,9 +32,10 @@ impl Data {
 			content: String::new(),
 		},
 	};
+	pub const TEST_SERIALIZE_DOCUMENT_1: &'static str =
+		r#"<?xml version="1.1" encoding="utf-8"?><data key="abc" other="42"><foo/></data>"#;
 }
 
-#[derive(crate::Element)]
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(crate::Element, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[xml_data("foo", crate(crate), ignore_unknown)]
 pub struct Foo;

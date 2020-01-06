@@ -5,18 +5,18 @@ use crate::{
 	},
 	Result,
 };
-use quick_xml::{
-	events::{
-		BytesDecl,
-		BytesEnd,
-		BytesStart,
-		BytesText,
-		Event,
-		attributes::Attribute,
-	},
+use quick_xml::events::{
+	attributes::Attribute,
+	BytesDecl,
+	BytesEnd,
+	BytesStart,
+	BytesText,
+	Event,
 };
-use std::borrow::Cow;
-use std::io;
+use std::{
+	borrow::Cow,
+	io,
+};
 
 fn cow_bytes<'a>(value: Cow<'a, str>) -> Cow<'a, [u8]> {
 	match value {
@@ -48,11 +48,8 @@ impl<'w, W: io::Write> Serializer<'w, W> {
 
 	/// Serialize full document from root element
 	pub fn serialize_document<E: Element>(&mut self, element: &E) -> Result<()> {
-		self.writer.write_event(Event::Decl(BytesDecl::new(
-			b"1.1",
-			Some(b"utf-8"),
-			None,
-		)))?;
+		self.writer
+			.write_event(Event::Decl(BytesDecl::new(b"1.1", Some(b"utf-8"), None)))?;
 		self.serialize_element(element)
 	}
 
@@ -102,16 +99,15 @@ impl<'a, 'w, W: io::Write> serializer::Serializer for &'_ mut SRef<'a, 'w, W> {
 		let start = self.start.as_mut().expect("element already started");
 		let key = key.as_bytes();
 		let value = cow_bytes(value);
-		start.push_attribute(Attribute {
-			key,
-			value,
-		});
+		start.push_attribute(Attribute { key, value });
 		Ok(())
 	}
 
 	fn serialize_text(&mut self, text: Cow<'_, str>) -> Result<()> {
 		self.start()?;
-		self.serializer.writer.write_event(Event::Text(BytesText::from_plain_str(&text)))?;
+		self.serializer
+			.writer
+			.write_event(Event::Text(BytesText::from_plain_str(&text)))?;
 		Ok(())
 	}
 
@@ -123,8 +119,8 @@ impl<'a, 'w, W: io::Write> serializer::Serializer for &'_ mut SRef<'a, 'w, W> {
 
 #[cfg(test)]
 mod test {
-	use crate::test_struct::*;
 	use super::*;
+	use crate::test_struct::*;
 
 	#[test]
 	fn test() {

@@ -1,9 +1,7 @@
 #![allow(missing_docs)] // names should be good enough
-//! Helper functions to generate common errors
+						//! Helper functions to generate common errors
 
-use crate::{
-	Error,
-};
+use crate::Error;
 use std::fmt;
 
 pub(crate) enum ParseError {
@@ -32,7 +30,9 @@ impl fmt::Debug for ParseError {
 			Self::UnexpectedText => write!(f, "Unexpected (non-whitespace) text/CDATA"),
 			Self::UnexpectedElement { tag } => write!(f, "Unexpected element: {}", tag),
 			Self::UnexpectedAttribute { key } => write!(f, "Unexpected attribute: {}", key),
-			Self::InnerElementNotParsed { tag } => write!(f, "Inner element {:?} wasn't fully parsed", tag),
+			Self::InnerElementNotParsed { tag } => {
+				write!(f, "Inner element {:?} wasn't fully parsed", tag)
+			},
 			Self::MissingElement { tag } => write!(f, "Missing element {:?}", tag),
 			Self::MissingUnknownElement => write!(f, "Missing element"),
 			Self::MissingAttribute { key } => write!(f, "Missing attribute {:?}", key),
@@ -46,8 +46,7 @@ impl fmt::Display for ParseError {
 	}
 }
 
-impl std::error::Error for ParseError {
-}
+impl std::error::Error for ParseError {}
 
 pub fn unexpected_eof(msg: &str) -> Error {
 	ParseError::UnexpectedEof { msg: msg.into() }.into()
