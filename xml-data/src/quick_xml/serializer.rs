@@ -18,7 +18,7 @@ use std::{
 	io,
 };
 
-fn cow_bytes<'a>(value: Cow<'a, str>) -> Cow<'a, [u8]> {
+fn cow_bytes(value: Cow<'_, str>) -> Cow<'_, [u8]> {
 	match value {
 		Cow::Owned(v) => Cow::Owned(v.into()),
 		Cow::Borrowed(v) => Cow::Borrowed(v.as_bytes()),

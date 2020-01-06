@@ -25,7 +25,7 @@ pub trait ElementState: Sized {
 	/// The default implementation will fail with "unexpected attribute".
 	fn parse_element_attribute(&mut self, key: &str, value: Cow<'_, str>) -> Result<()> {
 		let _ = value;
-		return Err(errors::unexpected_attribute(key));
+		Err(errors::unexpected_attribute(key))
 	}
 
 	/// Parse text or CDATA into state.
@@ -43,7 +43,7 @@ pub trait ElementState: Sized {
 	/// The default implementation will fail with "unexpected element".
 	fn parse_element_inner_node<P: ElementParser>(&mut self, tag: &str, parser: P) -> Result<()> {
 		let _ = parser;
-		return Err(errors::unexpected_element(tag));
+		Err(errors::unexpected_element(tag))
 	}
 
 	/// Finish parsing an element.
