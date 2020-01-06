@@ -15,4 +15,4 @@ If the `derive` feature is enabled the following traits can be derived:
 - `Element`, `parser::Element`, `serializer::Element`)
 - `Inner`, `parser::Inner`, `serializer::Inner`)
 
-The documentation for `master` is located at [https://stbuehler.github.io/rustdocs/xml-data/xml-data/](https://stbuehler.github.io/rustdocs/xml-data/xml-data/); released versions are documented at [https://docs.rs/xml-data](https://docs.rs/xml-data).
+The documentation for `master` is located at [https://stbuehler.github.io/rustdocs/xml-data/xml_data/](https://stbuehler.github.io/rustdocs/xml-data/xml_data/); released versions are documented at [https://docs.rs/xml-data](https://docs.rs/xml-data).

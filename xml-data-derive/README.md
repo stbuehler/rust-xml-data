@@ -11,4 +11,4 @@ This library focuses only on XML instead, and provides a more strict interface w
 For the following XML handling crates adaptors are included if enabled through the equally named features:
 - [`quick-xml`](https://crates.io/crates/quick-xml)
 
-The documentation for `master` is located at [https://stbuehler.github.io/rustdocs/xml-data/xml-data-derive/](https://stbuehler.github.io/rustdocs/xml-data/xml-data-derive/); released versions are documented at [https://docs.rs/xml-data-derive](https://docs.rs/xml-data-derive).
+The documentation for `master` is located at [https://stbuehler.github.io/rustdocs/xml-data/xml_data_derive/](https://stbuehler.github.io/rustdocs/xml-data/xml_data_derive/); released versions are documented at [https://docs.rs/xml-data-derive](https://docs.rs/xml-data-derive).
