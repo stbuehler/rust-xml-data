@@ -2,7 +2,7 @@
 
 on: [push, pull_request]
 
-name: Build, Test and Lint on Ubuntu
+name: Build, Test, nightly Format and Lint on Ubuntu
 
 jobs:
   check:
@@ -50,19 +50,28 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
+      - name: Install nightly toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: rustfmt
+
+      - name: Run cargo fmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          toolchain: nightly
+          args: --all -- --check
+
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
-          components: rustfmt, clippy
-
-      - name: Run cargo fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+          components: clippy
 
       - name: Run cargo clippy
         uses: actions-rs/cargo@v1
