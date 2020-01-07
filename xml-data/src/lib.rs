@@ -1,3 +1,4 @@
+#![cfg_attr(doc_cfg, feature(doc_cfg))]
 #![warn(missing_docs)]
 #![doc(html_root_url = "https://docs.rs/xml-data/0.0.1")]
 //! This library provides a generic interface to parse XML data: a user might implement how to
@@ -38,12 +39,20 @@ pub type Error = Box<dyn std::error::Error>;
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(feature = "quick-xml")]
+#[cfg_attr(doc_cfg, doc(cfg(feature = "quick-xml")))]
 pub mod quick_xml;
 
 #[cfg(any(test, feature = "_private-test"))]
 mod test_struct;
 
 pub use self::traits::{
+	Element,
+	Inner,
+};
+
+#[cfg_attr(doc_cfg, doc(cfg(feature = "derive")))]
+#[cfg(feature = "derive")]
+pub use xml_data_derive::{
 	Element,
 	Inner,
 };

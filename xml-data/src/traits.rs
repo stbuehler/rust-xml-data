@@ -3,12 +3,6 @@ use crate::{
 	serializer,
 };
 
-#[cfg(feature = "derive")]
-pub use xml_data_derive::{
-	Element,
-	Inner,
-};
-
 /// Combining [`parser::Element`] and [`serializer::Element`].
 ///
 /// Can be derived (if `derive` feature is active).

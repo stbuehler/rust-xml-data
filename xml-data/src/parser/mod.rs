@@ -21,6 +21,7 @@ mod ignore;
 mod inner;
 mod value;
 
+#[cfg_attr(doc_cfg, doc(cfg(feature = "derive")))]
 #[cfg(feature = "derive")]
 pub use xml_data_derive::{
 	ParserElement as Element,
