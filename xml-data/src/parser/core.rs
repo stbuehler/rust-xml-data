@@ -7,12 +7,14 @@ use std::borrow::Cow;
 /// A state to parse exactly one element
 ///
 /// The idea is that a parser will try different implementors of this to parse an element it finds;
-/// the first implementor returning `Some(..)` on `parse_element_start` will be used to actually
-/// parse it.
+/// the first implementor returning `Some(..)` on [`ElementState::parse_element_start`] will be
+/// used to actually parse it.
 ///
-/// After a successful `parse_element_start` the parser needs to call `parse_element_attribute` for
-/// all attributes on the element, then `parse_element_inner_text` and `parse_element_inner_node`
-/// until the closing tag of the element is hit, upon which it needs to call `parse_element_finish`.
+/// After a successful [`ElementState::parse_element_start`] the parser needs to call
+/// [`ElementState::parse_element_attribute`] for all attributes on the element, then
+/// [`ElementState::parse_element_inner_text`] and [`ElementState::parse_element_inner_node`] until
+/// the closing tag of the element is hit, upon which it needs to call
+/// [`ElementState::parse_element_finish`].
 pub trait ElementState: Sized {
 	/// Once fully parsed this is the resulting output type.
 	type Output: Sized;
@@ -52,11 +54,11 @@ pub trait ElementState: Sized {
 	/// optionally check data for consistency.
 	fn parse_element_finish(self) -> Result<Self::Output>;
 
-	/// In case `parse_element_start` didn't get to accept any element (either because it always
-	/// returned `None` or there just wasn't enough data), a parser can use this to generate an
-	/// error.
+	/// In case [`ElementState::parse_element_start`] didn't get to accept any element (either
+	/// because it always returned `None` or there just wasn't enough data), a parser can use this
+	/// to generate an error.
 	///
-	/// `ParseElementOnce` uses this.
+	/// [`ParseElementOnce`][`super::ParseElementOnce`] uses this.
 	fn parse_error_not_found<T>() -> Result<T> {
 		Err(errors::missing_unknown_element())
 	}
@@ -66,10 +68,10 @@ pub trait ElementState: Sized {
 pub trait ElementParser: Sized {
 	/// Start parsing an element with the prepared state
 	///
-	/// A parser will call the various `ElementState` to parse the element.
+	/// A parser will call the various [`ElementState`] to parse the element.
 	///
-	/// Users of this method will create the state using `ElementState::parse_element_start` and
-	/// produce the final result using `ElementState::parse_element_finish` after calling this
+	/// Users of this method will create the state using [`ElementState::parse_element_start`] and
+	/// produce the final result using [`ElementState::parse_element_finish`] after calling this
 	/// method.
 	fn parse_element_state<E: ElementState>(self, state: &mut E) -> Result<()>;
 }
