@@ -21,28 +21,29 @@
 
 extern crate proc_macro;
 
-mod attributes;
 mod element;
 mod parser;
 mod serialize;
 
+use darling::FromDeriveInput;
 use proc_macro::TokenStream;
-use syn::{
-	parse_macro_input,
-	DeriveInput,
-};
+use syn::{parse_macro_input, DeriveInput};
+
+use crate::element::{ElementInput, InnerInput};
 
 /// Derive `xml-data::{parser,serializer}::Element`
 #[proc_macro_derive(Element, attributes(xml_data))]
 pub fn derive_element(input: TokenStream) -> TokenStream {
 	let input = parse_macro_input!(input as DeriveInput);
 
-	let meta = element::Meta::parse_meta(&input, true);
-
-	let mut output = serialize::build_serialize(&meta, true);
-	output.extend(parser::build_parser(&meta, true));
-
-	TokenStream::from(output)
+	TokenStream::from(match ElementInput::from_derive_input(&input) {
+		Ok(input) => {
+			let mut output = serialize::derive_fixed_element(&input);
+			output.extend(parser::derive_element_parser(&input));
+			output
+		}
+		Err(e) => e.write_errors(),
+	})
 }
 
 /// Derive `xml-data::serializer::Element`
@@ -50,11 +51,10 @@ pub fn derive_element(input: TokenStream) -> TokenStream {
 pub fn derive_serializer_element(input: TokenStream) -> TokenStream {
 	let input = parse_macro_input!(input as DeriveInput);
 
-	let meta = element::Meta::parse_meta(&input, true);
-
-	let output = serialize::build_serialize(&meta, true);
-
-	TokenStream::from(output)
+	TokenStream::from(match ElementInput::from_derive_input(&input) {
+		Ok(input) => serialize::derive_fixed_element(&input),
+		Err(e) => e.write_errors(),
+	})
 }
 
 /// Derive `xml-data::parser::Element`
@@ -62,11 +62,10 @@ pub fn derive_serializer_element(input: TokenStream) -> TokenStream {
 pub fn derive_parser_element(input: TokenStream) -> TokenStream {
 	let input = parse_macro_input!(input as DeriveInput);
 
-	let meta = element::Meta::parse_meta(&input, true);
-
-	let output = parser::build_parser(&meta, true);
-
-	TokenStream::from(output)
+	TokenStream::from(match ElementInput::from_derive_input(&input) {
+		Ok(input) => parser::derive_element_parser(&input),
+		Err(e) => e.write_errors(),
+	})
 }
 
 /// Derive `xml-data::{parser,serializer}::Inner`
@@ -74,12 +73,14 @@ pub fn derive_parser_element(input: TokenStream) -> TokenStream {
 pub fn derive_inner(input: TokenStream) -> TokenStream {
 	let input = parse_macro_input!(input as DeriveInput);
 
-	let meta = element::Meta::parse_meta(&input, false);
-
-	let mut output = serialize::build_serialize(&meta, false);
-	output.extend(parser::build_parser(&meta, false));
-
-	TokenStream::from(output)
+	TokenStream::from(match InnerInput::from_derive_input(&input) {
+		Ok(input) => {
+			let mut output = serialize::derive_inner(&input);
+			output.extend(parser::derive_inner_parser(&input));
+			output
+		}
+		Err(e) => e.write_errors(),
+	})
 }
 
 /// Derive `xml-data::serializer::Inner`
@@ -87,11 +88,10 @@ pub fn derive_inner(input: TokenStream) -> TokenStream {
 pub fn derive_serializer_inner(input: TokenStream) -> TokenStream {
 	let input = parse_macro_input!(input as DeriveInput);
 
-	let meta = element::Meta::parse_meta(&input, false);
-
-	let output = serialize::build_serialize(&meta, false);
-
-	TokenStream::from(output)
+	TokenStream::from(match InnerInput::from_derive_input(&input) {
+		Ok(input) => serialize::derive_inner(&input),
+		Err(e) => e.write_errors(),
+	})
 }
 
 /// Derive `xml-data::parser::Inner`
@@ -99,9 +99,8 @@ pub fn derive_serializer_inner(input: TokenStream) -> TokenStream {
 pub fn derive_parser_inner(input: TokenStream) -> TokenStream {
 	let input = parse_macro_input!(input as DeriveInput);
 
-	let meta = element::Meta::parse_meta(&input, false);
-
-	let output = parser::build_parser(&meta, false);
-
-	TokenStream::from(output)
+	TokenStream::from(match InnerInput::from_derive_input(&input) {
+		Ok(input) => parser::derive_inner_parser(&input),
+		Err(e) => e.write_errors(),
+	})
 }

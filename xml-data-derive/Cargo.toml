@@ -17,6 +17,7 @@ license = "MIT"
 proc-macro = true
 
 [dependencies]
+darling = "0.13.0-beta"
 proc-macro2 = "1.0.6"
 quote = "1.0.2"
 syn = "1.0.11"
