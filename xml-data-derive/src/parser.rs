@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use crate::element::{ElementInput, FieldAttribute, FieldChild, InnerInput};
 use darling::util::SpannedValue;
 use proc_macro2::TokenStream;
@@ -47,6 +45,39 @@ enum ParseMode {
 	Text,
 }
 
+/// Node and text extractors for fields represented as children in XML.
+struct ChildExtractors<'a> {
+	fields: Vec<SpannedValue<&'a FieldChild>>,
+	/// Tokens defining `Ok` return value
+	success: TokenStream,
+}
+
+impl<'a> ChildExtractors<'a> {
+	fn new(
+		fields: impl IntoIterator<Item = SpannedValue<&'a FieldChild>>,
+		success: TokenStream,
+	) -> Self {
+		Self {
+			fields: fields.into_iter().collect(),
+			success,
+		}
+	}
+
+	fn nodes(&'a self) -> Vec<ChildExtractor<'a>> {
+		self.fields
+			.iter()
+			.map(|v| ChildExtractor::node(*v, &self.success))
+			.collect()
+	}
+
+	fn text(&'a self) -> Vec<ChildExtractor<'a>> {
+		self.fields
+			.iter()
+			.map(|v| ChildExtractor::text(*v, &self.success))
+			.collect()
+	}
+}
+
 struct ChildExtractor<'a> {
 	data: SpannedValue<&'a FieldChild>,
 	success: &'a TokenStream,
@@ -73,21 +104,20 @@ impl<'a> ChildExtractor<'a> {
 
 impl ToTokens for ChildExtractor<'_> {
 	fn to_tokens(&self, tokens: &mut TokenStream) {
-		let data = &self.data;
+		let Self { data, success, .. } = self;
 		let ident = &data.ident;
-		let parse_success = self.success;
 
 		tokens.append_all(match self.mode {
 			ParseMode::Node => quote_spanned! {data.span()=>
 				let parser = match self.#ident.parse_inner_node(tag, parser)? {
 					InnerParseResult::Next(p) => p,
-					InnerParseResult::Success => return #parse_success,
+					InnerParseResult::Success => return Ok(#success),
 				};
 			},
 			ParseMode::Text => quote_spanned! {data.span()=>
 				let text = match self.#ident.parse_inner_text(text)? {
 					InnerParseResult::Next(t) => t,
-					InnerParseResult::Success => return #parse_success,
+					InnerParseResult::Success => return Ok(#success),
 				};
 			},
 		});
@@ -102,29 +132,17 @@ pub fn derive_element_parser(input: &ElementInput) -> TokenStream {
 	} = input;
 
 	let tag = input.tag();
-	let success = quote! { Ok(()) };
 
 	let state = State::new(ident, input.fields(), xml_data_crate);
 
 	let attr_extractors = input
 		.attrs()
-		.map(|field| {
-			AttrExtractor::new(
-				SpannedValue::new(field.deref(), field.span()),
-				xml_data_crate,
-			)
-		})
+		.map(|field| AttrExtractor::new(field, xml_data_crate))
 		.collect::<Vec<_>>();
 
-	let child_nodes = input
-		.elements()
-		.map(|field| ChildExtractor::node(field, &success))
-		.collect::<Vec<_>>();
-
-	let child_text = input
-		.elements()
-		.map(|field| ChildExtractor::text(field, &success))
-		.collect::<Vec<_>>();
+	let children = ChildExtractors::new(input.elements(), quote!(()));
+	let child_nodes = children.nodes();
+	let child_text = children.text();
 
 	let handle_unknown_attribute = if input.ignore_unknown.attributes() {
 		quote! {
@@ -207,19 +225,14 @@ pub fn derive_inner_parser(input: &InnerInput) -> TokenStream {
 		..
 	} = input;
 
-	let success = quote!(Ok(#xml_data_crate::parser::InnerParseResult::Success));
-
 	let state = State::new(ident, input.elements(), xml_data_crate);
 
-	let child_nodes = input
-		.elements()
-		.map(|field| ChildExtractor::node(field, &success))
-		.collect::<Vec<_>>();
-
-	let child_text = input
-		.elements()
-		.map(|field| ChildExtractor::text(field, &success))
-		.collect::<Vec<_>>();
+	let children = ChildExtractors::new(
+		input.elements(),
+		quote!(#xml_data_crate::parser::InnerParseResult::Success),
+	);
+	let child_nodes = children.nodes();
+	let child_text = children.text();
 
 	const_enclosure(
 		xml_data_crate,
