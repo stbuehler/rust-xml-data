@@ -1,20 +1,19 @@
 use crate::element::{ElementInput, FieldAttribute, FieldChild, InnerInput};
-use darling::util::SpannedValue;
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned, ToTokens, TokenStreamExt};
-use syn::Path;
+use syn::{spanned::Spanned, Path};
 
 mod state;
 
 use state::State;
 
 struct AttrExtractor<'a> {
-	data: SpannedValue<&'a FieldAttribute>,
+	data: &'a FieldAttribute,
 	xml_data_crate: &'a Path,
 }
 
 impl<'a> AttrExtractor<'a> {
-	fn new(data: SpannedValue<&'a FieldAttribute>, xml_data_crate: &'a Path) -> Self {
+	fn new(data: &'a FieldAttribute, xml_data_crate: &'a Path) -> Self {
 		Self {
 			data,
 			xml_data_crate,
@@ -47,16 +46,13 @@ enum ParseMode {
 
 /// Node and text extractors for fields represented as children in XML.
 struct ChildExtractors<'a> {
-	fields: Vec<SpannedValue<&'a FieldChild>>,
+	fields: Vec<&'a FieldChild>,
 	/// Tokens defining `Ok` return value
 	success: TokenStream,
 }
 
 impl<'a> ChildExtractors<'a> {
-	fn new(
-		fields: impl IntoIterator<Item = SpannedValue<&'a FieldChild>>,
-		success: TokenStream,
-	) -> Self {
+	fn new(fields: impl IntoIterator<Item = &'a FieldChild>, success: TokenStream) -> Self {
 		Self {
 			fields: fields.into_iter().collect(),
 			success,
@@ -79,13 +75,13 @@ impl<'a> ChildExtractors<'a> {
 }
 
 struct ChildExtractor<'a> {
-	data: SpannedValue<&'a FieldChild>,
+	data: &'a FieldChild,
 	success: &'a TokenStream,
 	mode: ParseMode,
 }
 
 impl<'a> ChildExtractor<'a> {
-	fn node(data: SpannedValue<&'a FieldChild>, success: &'a TokenStream) -> Self {
+	fn node(data: &'a FieldChild, success: &'a TokenStream) -> Self {
 		Self {
 			data,
 			success,
@@ -93,7 +89,7 @@ impl<'a> ChildExtractor<'a> {
 		}
 	}
 
-	fn text(data: SpannedValue<&'a FieldChild>, success: &'a TokenStream) -> Self {
+	fn text(data: &'a FieldChild, success: &'a TokenStream) -> Self {
 		Self {
 			data,
 			success,

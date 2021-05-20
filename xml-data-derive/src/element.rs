@@ -1,13 +1,18 @@
-use std::{borrow::Cow, ops::Deref};
+use std::borrow::Cow;
 
 use darling::{
 	ast,
-	util::{Flag, Override, SpannedValue},
+	util::{Flag, Override},
 	FromDeriveInput, FromField, FromMeta,
 };
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{parse_quote, Ident, Path, Type};
+use syn::{parse_quote, spanned::Spanned, Ident, Path, Type};
+
+pub trait FieldBase {
+	fn ident(&self) -> &Ident;
+	fn ty(&self) -> &Type;
+}
 
 /// Parsed representation of a field that should be expressed as an XML attribute.
 pub struct FieldAttribute {
@@ -16,6 +21,7 @@ pub struct FieldAttribute {
 	pub key: String,
 	pub optional: bool,
 	pub is_string: bool,
+	span: Span,
 }
 
 impl FieldAttribute {
@@ -31,9 +37,42 @@ impl FieldAttribute {
 	}
 }
 
+impl FieldBase for FieldAttribute {
+	fn ident(&self) -> &Ident {
+		&self.ident
+	}
+
+	fn ty(&self) -> &Type {
+		&self.ty
+	}
+}
+
+impl Spanned for FieldAttribute {
+	fn span(&self) -> Span {
+		self.span
+	}
+}
+
 pub struct FieldChild {
 	pub ident: Ident,
 	pub ty: Type,
+	span: Span,
+}
+
+impl FieldBase for FieldChild {
+	fn ident(&self) -> &Ident {
+		&self.ident
+	}
+
+	fn ty(&self) -> &Type {
+		&self.ty
+	}
+}
+
+impl Spanned for FieldChild {
+	fn span(&self) -> Span {
+		self.span
+	}
 }
 
 impl FromField for FieldChild {
@@ -42,6 +81,7 @@ impl FromField for FieldChild {
 			Ok(Self {
 				ident,
 				ty: field.ty.clone(),
+				span: field.span(),
 			})
 		} else {
 			Err(darling::Error::custom("Only named fields supported"))
@@ -54,6 +94,22 @@ impl FromField for FieldChild {
 pub enum Field {
 	Attribute(FieldAttribute),
 	Child(FieldChild),
+}
+
+impl FieldBase for Field {
+	fn ident(&self) -> &Ident {
+		match self {
+			Field::Attribute(v) => v.ident(),
+			Field::Child(v) => v.ident(),
+		}
+	}
+
+	fn ty(&self) -> &Type {
+		match self {
+			Field::Attribute(v) => v.ty(),
+			Field::Child(v) => v.ty(),
+		}
+	}
 }
 
 impl FromField for Field {
@@ -101,6 +157,7 @@ impl FromField for Field {
 				optional: attr.optional,
 				ident,
 				ty,
+				span: field.span(),
 			}))
 		} else if attr_string.is_some() {
 			Ok(Field::Attribute(FieldAttribute {
@@ -109,9 +166,14 @@ impl FromField for Field {
 				optional: false,
 				ident,
 				ty,
+				span: field.span(),
 			}))
 		} else {
-			Ok(Field::Child(FieldChild { ident, ty }))
+			Ok(Field::Child(FieldChild {
+				ident,
+				ty,
+				span: field.span(),
+			}))
 		}
 	}
 }
@@ -141,7 +203,7 @@ fn default_crate_path() -> Path {
 #[darling(attributes(xml_data), supports(struct_named, struct_unit))]
 pub struct ElementInput {
 	pub ident: Ident,
-	pub data: ast::Data<(), SpannedValue<Field>>,
+	pub data: ast::Data<(), Field>,
 	/// If set, the XML tag name to use instead of the deriving struct ident.
 	#[darling(default)]
 	tag: Option<String>,
@@ -162,16 +224,15 @@ impl ElementInput {
 	}
 
 	/// The fields of the input struct.
-	pub fn fields<'a>(&'a self) -> impl Iterator<Item = &'a SpannedValue<Field>> {
+	pub fn fields<'a>(&'a self) -> impl Iterator<Item = &'a Field> {
 		self.data.as_ref().take_struct().unwrap().into_iter()
 	}
 
 	/// Fields of the input struct that are represented as attributes.
-	pub fn attrs<'a>(&'a self) -> impl Iterator<Item = SpannedValue<&'a FieldAttribute>> {
+	pub fn attrs<'a>(&'a self) -> impl Iterator<Item = &'a FieldAttribute> {
 		self.fields().filter_map(|field| {
-			let span = field.span();
-			if let Field::Attribute(attr) = field.deref() {
-				Some(SpannedValue::new(attr, span))
+			if let Field::Attribute(attr) = field {
+				Some(attr)
 			} else {
 				None
 			}
@@ -179,11 +240,10 @@ impl ElementInput {
 	}
 
 	/// Fields of the input struct that are represented as child elements.
-	pub fn elements<'a>(&'a self) -> impl Iterator<Item = SpannedValue<&'a FieldChild>> {
+	pub fn elements<'a>(&'a self) -> impl Iterator<Item = &'a FieldChild> {
 		self.fields().filter_map(|field| {
-			let span = field.span();
-			if let Field::Child(child) = field.deref() {
-				Some(SpannedValue::new(child, span))
+			if let Field::Child(child) = field {
+				Some(child)
 			} else {
 				None
 			}
@@ -195,18 +255,13 @@ impl ElementInput {
 #[darling(attributes(xml_data), supports(struct_named, struct_unit))]
 pub struct InnerInput {
 	pub ident: Ident,
-	pub data: ast::Data<(), SpannedValue<FieldChild>>,
+	pub data: ast::Data<(), FieldChild>,
 	#[darling(rename = "crate", default = "default_crate_path")]
 	pub xml_data_crate: Path,
 }
 
 impl InnerInput {
-	pub fn elements<'a>(&'a self) -> impl Iterator<Item = SpannedValue<&'a FieldChild>> {
-		self.data
-			.as_ref()
-			.take_struct()
-			.unwrap()
-			.into_iter()
-			.map(|field| SpannedValue::new(field.deref(), field.span()))
+	pub fn elements<'a>(&'a self) -> impl Iterator<Item = &'a FieldChild> {
+		self.data.as_ref().take_struct().unwrap().into_iter()
 	}
 }

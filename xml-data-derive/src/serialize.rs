@@ -1,21 +1,17 @@
-use crate::element::{self, ElementInput, FieldAttribute, FieldChild, InnerInput};
-use darling::util::SpannedValue;
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned, ToTokens, TokenStreamExt};
-use syn::Path;
+use syn::{spanned::Spanned, Path};
+
+use crate::element::{self, ElementInput, FieldAttribute, FieldChild, InnerInput};
 
 struct ElementChild<'a> {
-	data: SpannedValue<&'a FieldChild>,
+	data: &'a FieldChild,
 	xml_data_crate: &'a Path,
 	serializer: &'a TokenStream,
 }
 
 impl<'a> ElementChild<'a> {
-	fn new(
-		data: SpannedValue<&'a FieldChild>,
-		xml_data_crate: &'a Path,
-		serializer: &'a TokenStream,
-	) -> Self {
+	fn new(data: &'a FieldChild, xml_data_crate: &'a Path, serializer: &'a TokenStream) -> Self {
 		Self {
 			data,
 			xml_data_crate,
@@ -40,12 +36,12 @@ impl ToTokens for ElementChild<'_> {
 }
 
 struct ElementAttribute<'a> {
-	data: SpannedValue<&'a FieldAttribute>,
+	data: &'a FieldAttribute,
 	xml_data_crate: &'a Path,
 }
 
 impl<'a> ElementAttribute<'a> {
-	fn new(data: SpannedValue<&'a FieldAttribute>, xml_data_crate: &'a Path) -> Self {
+	fn new(data: &'a FieldAttribute, xml_data_crate: &'a Path) -> Self {
 		Self {
 			data,
 			xml_data_crate,

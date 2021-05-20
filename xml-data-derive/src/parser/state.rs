@@ -1,10 +1,8 @@
-use std::ops::Deref;
-
-use crate::element::{Field, FieldAttribute, FieldChild};
-use darling::util::SpannedValue;
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned, ToTokens, TokenStreamExt};
-use syn::{Ident, Path};
+use syn::{spanned::Spanned, Ident, Path};
+
+use crate::element::{Field, FieldAttribute, FieldChild};
 
 pub(super) struct State<'a, T> {
 	ident: &'a Ident,
@@ -82,27 +80,22 @@ impl<'a, T> FieldDeclaration<'a, T> {
 			xml_data_crate,
 		}
 	}
-}
 
-impl<'a, T> FieldDeclaration<'a, &'a SpannedValue<T>> {
-	fn new_value<U>(&'a self, value: U) -> FieldDeclaration<'a, SpannedValue<U>> {
-		FieldDeclaration::new(
-			SpannedValue::new(value, self.data.span()),
-			self.xml_data_crate,
-		)
+	fn new_value<U>(&'a self, value: U) -> FieldDeclaration<'a, U> {
+		FieldDeclaration::new(value, self.xml_data_crate)
 	}
 }
 
-impl<'a> ToTokens for FieldDeclaration<'a, &'a SpannedValue<Field>> {
+impl<'a> ToTokens for FieldDeclaration<'a, &'a Field> {
 	fn to_tokens(&self, tokens: &mut TokenStream) {
-		match self.data.deref() {
+		match &self.data {
 			Field::Attribute(attr) => self.new_value(attr).to_tokens(tokens),
 			Field::Child(child) => self.new_value(child).to_tokens(tokens),
 		}
 	}
 }
 
-impl<'a> ToTokens for FieldDeclaration<'a, SpannedValue<&'a FieldAttribute>> {
+impl<'a> ToTokens for FieldDeclaration<'a, &'a FieldAttribute> {
 	fn to_tokens(&self, tokens: &mut TokenStream) {
 		let Self { data, .. } = self;
 		let ident = &data.ident;
@@ -119,7 +112,7 @@ impl<'a> ToTokens for FieldDeclaration<'a, SpannedValue<&'a FieldAttribute>> {
 	}
 }
 
-impl<'a> ToTokens for FieldDeclaration<'a, SpannedValue<&'a FieldChild>> {
+impl<'a> ToTokens for FieldDeclaration<'a, &'a FieldChild> {
 	fn to_tokens(&self, tokens: &mut TokenStream) {
 		let Self {
 			data,
@@ -147,27 +140,22 @@ impl<'a, T> FieldInitializer<'a, T> {
 			xml_data_crate,
 		}
 	}
-}
 
-impl<'a, T> FieldInitializer<'a, &'a SpannedValue<T>> {
-	fn new_value<U>(&'a self, value: U) -> FieldInitializer<'a, SpannedValue<U>> {
-		FieldInitializer::new(
-			SpannedValue::new(value, self.data.span()),
-			self.xml_data_crate,
-		)
+	fn new_value<U>(&'a self, value: U) -> FieldInitializer<'a, U> {
+		FieldInitializer::new(value, self.xml_data_crate)
 	}
 }
 
-impl<'a> ToTokens for FieldInitializer<'a, &'a SpannedValue<Field>> {
+impl<'a> ToTokens for FieldInitializer<'a, &'a Field> {
 	fn to_tokens(&self, tokens: &mut TokenStream) {
-		match self.data.deref() {
+		match self.data {
 			Field::Attribute(attr) => self.new_value(attr).to_tokens(tokens),
 			Field::Child(child) => self.new_value(child).to_tokens(tokens),
 		}
 	}
 }
 
-impl<'a> ToTokens for FieldInitializer<'a, SpannedValue<&'a FieldAttribute>> {
+impl<'a> ToTokens for FieldInitializer<'a, &'a FieldAttribute> {
 	fn to_tokens(&self, tokens: &mut TokenStream) {
 		let Self {
 			data,
@@ -192,7 +180,7 @@ impl<'a> ToTokens for FieldInitializer<'a, SpannedValue<&'a FieldAttribute>> {
 	}
 }
 
-impl<'a> ToTokens for FieldInitializer<'a, SpannedValue<&'a FieldChild>> {
+impl<'a> ToTokens for FieldInitializer<'a, &'a FieldChild> {
 	fn to_tokens(&self, tokens: &mut TokenStream) {
 		let ident = &self.data.ident;
 
