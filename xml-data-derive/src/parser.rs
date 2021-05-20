@@ -1,143 +1,14 @@
 use std::ops::Deref;
 
-use crate::element::{ElementInput, Field, FieldAttribute, FieldChild, InnerInput};
+use crate::element::{ElementInput, FieldAttribute, FieldChild, InnerInput};
 use darling::util::SpannedValue;
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned, ToTokens, TokenStreamExt};
 use syn::Path;
 
-/// Initial declaration of a field, where its type is determined.
-struct FieldDeclaration<'a, T> {
-	data: T,
-	xml_data_crate: &'a Path,
-}
+mod state;
 
-impl<'a, T> FieldDeclaration<'a, T> {
-	fn new(data: T, xml_data_crate: &'a Path) -> Self {
-		Self {
-			data,
-			xml_data_crate,
-		}
-	}
-}
-
-impl<'a, T> FieldDeclaration<'a, &'a SpannedValue<T>> {
-	fn new_value<U>(&'a self, value: U) -> FieldDeclaration<'a, SpannedValue<U>> {
-		FieldDeclaration::new(
-			SpannedValue::new(value, self.data.span()),
-			self.xml_data_crate,
-		)
-	}
-}
-
-impl<'a> ToTokens for FieldDeclaration<'a, &'a SpannedValue<Field>> {
-	fn to_tokens(&self, tokens: &mut TokenStream) {
-		match self.data.deref() {
-			Field::Attribute(attr) => self.new_value(attr).to_tokens(tokens),
-			Field::Child(child) => self.new_value(child).to_tokens(tokens),
-		}
-	}
-}
-
-impl<'a> ToTokens for FieldDeclaration<'a, SpannedValue<&'a FieldAttribute>> {
-	fn to_tokens(&self, tokens: &mut TokenStream) {
-		let Self { data, .. } = self;
-		let ident = &data.ident;
-		let ty = &data.ty;
-		tokens.append_all(if data.optional {
-			quote_spanned! {data.span()=>
-				#ident: #ty,
-			}
-		} else {
-			quote_spanned! {data.span()=>
-				#ident: Option<#ty>,
-			}
-		});
-	}
-}
-
-impl<'a> ToTokens for FieldDeclaration<'a, SpannedValue<&'a FieldChild>> {
-	fn to_tokens(&self, tokens: &mut TokenStream) {
-		let Self {
-			data,
-			xml_data_crate,
-		} = self;
-		let ident = &data.ident;
-		let ty = &data.ty;
-
-		tokens.append_all(quote_spanned! {data.span()=>
-			#ident: <#ty as #xml_data_crate::parser::Inner>::ParseState,
-		});
-	}
-}
-
-/// Wrapper for initializing a field in the deriving type from a field in the builder type.
-struct FieldInitializer<'a, T> {
-	data: T,
-	xml_data_crate: &'a Path,
-}
-
-impl<'a, T> FieldInitializer<'a, T> {
-	fn new(data: T, xml_data_crate: &'a Path) -> Self {
-		Self {
-			data,
-			xml_data_crate,
-		}
-	}
-}
-
-impl<'a, T> FieldInitializer<'a, &'a SpannedValue<T>> {
-	fn new_value<U>(&'a self, value: U) -> FieldInitializer<'a, SpannedValue<U>> {
-		FieldInitializer::new(
-			SpannedValue::new(value, self.data.span()),
-			self.xml_data_crate,
-		)
-	}
-}
-
-impl<'a> ToTokens for FieldInitializer<'a, &'a SpannedValue<Field>> {
-	fn to_tokens(&self, tokens: &mut TokenStream) {
-		match self.data.deref() {
-			Field::Attribute(attr) => self.new_value(attr).to_tokens(tokens),
-			Field::Child(child) => self.new_value(child).to_tokens(tokens),
-		}
-	}
-}
-
-impl<'a> ToTokens for FieldInitializer<'a, SpannedValue<&'a FieldAttribute>> {
-	fn to_tokens(&self, tokens: &mut TokenStream) {
-		let Self {
-			data,
-			xml_data_crate,
-		} = self;
-		let ident = &data.ident;
-		tokens.append_all(if data.optional {
-			quote_spanned! {data.span()=>
-				#ident: #self.#ident,
-			}
-		} else {
-			let attr_key = &data.key;
-			quote_spanned! {data.span()=>
-				#ident: match self.#ident {
-					Some(v) => v,
-					None => {
-						return Err(#xml_data_crate::errors::missing_attribute(#attr_key));
-					}
-				},
-			}
-		});
-	}
-}
-
-impl<'a> ToTokens for FieldInitializer<'a, SpannedValue<&'a FieldChild>> {
-	fn to_tokens(&self, tokens: &mut TokenStream) {
-		let ident = &self.data.ident;
-
-		tokens.append_all(quote_spanned! {self.data.span()=>
-			#ident: self.#ident.parse_inner_finish()?,
-		});
-	}
-}
+use state::State;
 
 struct AttrExtractor<'a> {
 	data: SpannedValue<&'a FieldAttribute>,
@@ -204,7 +75,7 @@ impl ToTokens for ChildExtractor<'_> {
 	fn to_tokens(&self, tokens: &mut TokenStream) {
 		let data = &self.data;
 		let ident = &data.ident;
-		let parse_success = &self.success;
+		let parse_success = self.success;
 
 		tokens.append_all(match self.mode {
 			ParseMode::Node => quote_spanned! {data.span()=>
@@ -233,15 +104,7 @@ pub fn derive_element_parser(input: &ElementInput) -> TokenStream {
 	let tag = input.tag();
 	let success = quote! { Ok(()) };
 
-	let declarations = input
-		.fields()
-		.map(|field| FieldDeclaration::new(field, xml_data_crate))
-		.collect::<Vec<_>>();
-
-	let initializers = input
-		.fields()
-		.map(|field| FieldInitializer::new(field, xml_data_crate))
-		.collect::<Vec<_>>();
+	let state = State::new(ident, input.fields(), xml_data_crate);
 
 	let attr_extractors = input
 		.attrs()
@@ -302,10 +165,7 @@ pub fn derive_element_parser(input: &ElementInput) -> TokenStream {
 	const_enclosure(
 		xml_data_crate,
 		quote! {
-			#[derive(Default)]
-			pub struct State {
-				#(#declarations)*
-			}
+			#state
 
 			impl FixedElementState for State {
 				type Output = #ident;
@@ -329,9 +189,7 @@ pub fn derive_element_parser(input: &ElementInput) -> TokenStream {
 				}
 
 				fn parse_element_finish(self) -> Result<Self::Output> {
-					Ok(#ident {
-						#(#initializers)*
-					})
+					::std::convert::TryFrom::try_from(self)
 				}
 			}
 
@@ -351,15 +209,7 @@ pub fn derive_inner_parser(input: &InnerInput) -> TokenStream {
 
 	let success = quote!(Ok(#xml_data_crate::parser::InnerParseResult::Success));
 
-	let declarations = input
-		.elements()
-		.map(|field| FieldDeclaration::new(field, xml_data_crate))
-		.collect::<Vec<_>>();
-
-	let initializers = input
-		.elements()
-		.map(|field| FieldInitializer::new(field, xml_data_crate))
-		.collect::<Vec<_>>();
+	let state = State::new(ident, input.elements(), xml_data_crate);
 
 	let child_nodes = input
 		.elements()
@@ -374,10 +224,7 @@ pub fn derive_inner_parser(input: &InnerInput) -> TokenStream {
 	const_enclosure(
 		xml_data_crate,
 		quote! {
-			#[derive(Default)]
-			pub struct State {
-				#(#declarations)*
-			}
+			#state
 
 			impl InnerState for State {
 				type Output = #ident;
@@ -393,9 +240,7 @@ pub fn derive_inner_parser(input: &InnerInput) -> TokenStream {
 				}
 
 				fn parse_inner_finish(self) -> Result<Self::Output> {
-					Ok(#ident {
-						#(#initializers)*
-					})
+					::std::convert::TryFrom::try_from(self)
 				}
 			}
 
