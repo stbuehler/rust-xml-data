@@ -27,9 +27,10 @@ mod serialize;
 
 use darling::FromDeriveInput;
 use proc_macro::TokenStream;
+use serde_derive_internals::Ctxt;
 use syn::{parse_macro_input, DeriveInput};
 
-use crate::element::{ElementInput, InnerInput};
+use crate::element::{ElementInput, InnerInput, SerdeElementInput};
 
 /// Derive `xml-data::{parser,serializer}::Element`
 #[proc_macro_derive(Element, attributes(xml_data))]
@@ -47,14 +48,9 @@ pub fn derive_element(input: TokenStream) -> TokenStream {
 }
 
 /// Derive `xml-data::serializer::Element`
-#[proc_macro_derive(SerializerElement, attributes(xml_data))]
+#[proc_macro_derive(SerializerElement, attributes(xml_data, serde))]
 pub fn derive_serializer_element(input: TokenStream) -> TokenStream {
-	let input = parse_macro_input!(input as DeriveInput);
-
-	TokenStream::from(match ElementInput::from_derive_input(&input) {
-		Ok(input) => serialize::derive_fixed_element(&input),
-		Err(e) => e.write_errors(),
-	})
+	process_input(input, |v| serialize::s_derive_fixed(&v))
 }
 
 /// Derive `xml-data::parser::Element`
@@ -103,4 +99,33 @@ pub fn derive_parser_inner(input: TokenStream) -> TokenStream {
 		Ok(input) => parser::derive_inner_parser(&input),
 		Err(e) => e.write_errors(),
 	})
+}
+
+fn process_input(
+	input: TokenStream,
+	to_tokens: impl FnOnce(SerdeElementInput<'_>) -> proc_macro2::TokenStream,
+) -> TokenStream {
+	let input = parse_macro_input!(input as DeriveInput);
+
+	let ctxt = Ctxt::new();
+	let parsed = match SerdeElementInput::new(&input, &ctxt) {
+		Ok(v) => v,
+		Err(e) => {
+			let error = e.unwrap_or_else(|| {
+				darling::Error::multiple(
+					ctxt.check()
+						.unwrap_err()
+						.into_iter()
+						.map(darling::Error::from)
+						.collect::<Vec<_>>(),
+				)
+			});
+			return error.write_errors().into();
+		}
+	};
+
+	let output = TokenStream::from(to_tokens(parsed));
+	let _ = ctxt.check();
+
+	output
 }

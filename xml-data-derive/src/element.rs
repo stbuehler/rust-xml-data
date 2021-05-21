@@ -7,7 +7,10 @@ use darling::{
 };
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
+use serde_derive_internals::{ast::Container, Ctxt, Derive};
 use syn::{parse_quote, spanned::Spanned, Ident, Path, Type};
+
+mod infer_type;
 
 pub trait FieldBase {
 	fn ident(&self) -> &Ident;
@@ -118,7 +121,7 @@ impl FromField for Field {
 		#[darling(default)]
 		struct RawFieldAttr {
 			pub key: Option<String>,
-			pub optional: bool,
+			pub optional: Option<bool>,
 		}
 
 		#[derive(FromField)]
@@ -149,12 +152,8 @@ impl FromField for Field {
 			let attr = attr.unwrap_or_default();
 			Ok(Field::Attribute(FieldAttribute {
 				key: attr.key.unwrap_or_else(|| ident.to_string()),
-				is_string: if let Type::Path(pt) = &ty {
-					pt.qself.is_none() && pt.path.is_ident("String")
-				} else {
-					false
-				},
-				optional: attr.optional,
+				is_string: infer_type::as_ref_str(&ty),
+				optional: attr.optional.unwrap_or_else(|| infer_type::option(&ty)),
 				ident,
 				ty,
 				span: field.span(),
@@ -263,5 +262,95 @@ pub struct InnerInput {
 impl InnerInput {
 	pub fn elements<'a>(&'a self) -> impl Iterator<Item = &'a FieldChild> {
 		self.data.as_ref().take_struct().unwrap().into_iter()
+	}
+}
+
+pub struct SerdeElementInput<'a> {
+	pub xml: ElementInput,
+	pub serde: Container<'a>,
+}
+
+impl<'a> SerdeElementInput<'a> {
+	pub fn new(
+		input: &'a syn::DeriveInput,
+		serde_ctx: &'a Ctxt,
+	) -> Result<Self, Option<darling::Error>> {
+		let xml = ElementInput::from_derive_input(input)?;
+		let serde = Container::from_ast(serde_ctx, input, Derive::Serialize).ok_or(None)?;
+
+		Ok(Self { xml, serde })
+	}
+
+	pub fn fields(&'a self) -> impl Iterator<Item = SField<&'a Field>> {
+		self.xml
+			.fields()
+			.zip(self.serde.data.all_fields())
+			.map(move |(x, s)| SField {
+				parent: self,
+				xml: x,
+				serde: s,
+			})
+	}
+
+	pub fn attrs(&'a self) -> impl Iterator<Item = SField<&'a FieldAttribute>> {
+		self.fields().filter_map(|f| f.as_field_attr())
+	}
+
+	pub fn children(&'a self) -> impl Iterator<Item = SField<&'a FieldChild>> {
+		self.fields().filter_map(|f| f.as_field_child())
+	}
+}
+
+pub struct SField<'a, T> {
+	parent: &'a SerdeElementInput<'a>,
+	pub xml: T,
+	pub serde: &'a serde_derive_internals::ast::Field<'a>,
+}
+
+impl<'a, T> SField<'a, T> {
+	pub fn xml_data_crate(&self) -> &Path {
+		&self.parent.xml.xml_data_crate
+	}
+}
+
+impl<'a> SField<'a, &'a Field> {
+	pub fn as_field_attr(&self) -> Option<SField<'a, &'a FieldAttribute>> {
+		if let Field::Attribute(attr) = self.xml {
+			Some(SField {
+				parent: self.parent,
+				xml: attr,
+				serde: self.serde,
+			})
+		} else {
+			None
+		}
+	}
+
+	pub fn as_field_child(&self) -> Option<SField<'a, &'a FieldChild>> {
+		if let Field::Child(child) = self.xml {
+			Some(SField {
+				parent: self.parent,
+				xml: child,
+				serde: self.serde,
+			})
+		} else {
+			None
+		}
+	}
+}
+
+impl<'a, T: Spanned> Spanned for SField<'a, &'a T> {
+	fn span(&self) -> Span {
+		self.xml.span()
+	}
+}
+
+impl<'a, T: FieldBase> FieldBase for SField<'a, &'a T> {
+	fn ident(&self) -> &Ident {
+		self.xml.ident()
+	}
+
+	fn ty(&self) -> &Type {
+		self.xml.ty()
 	}
 }
