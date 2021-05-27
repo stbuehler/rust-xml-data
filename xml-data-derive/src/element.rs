@@ -7,21 +7,29 @@ use darling::{
 };
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use serde_derive_internals::{ast::Container, Ctxt, Derive};
+use serde_derive_internals::{ast::Container, attr::Name, Ctxt, Derive};
 use syn::{parse_quote, spanned::Spanned, Ident, Path, Type};
 
 mod infer_type;
+
+pub trait CrateRoot {
+	fn crate_root(&self) -> &Path;
+}
 
 pub trait FieldBase {
 	fn ident(&self) -> &Ident;
 	fn ty(&self) -> &Type;
 }
 
+pub trait StructDefault {
+	fn struct_default(&self) -> &serde_derive_internals::attr::Default;
+}
+
 /// Parsed representation of a field that should be expressed as an XML attribute.
 pub struct FieldAttribute {
 	pub ident: Ident,
 	pub ty: Type,
-	pub key: String,
+	pub key: Option<String>,
 	pub optional: bool,
 	pub is_string: bool,
 	span: Span,
@@ -151,7 +159,7 @@ impl FromField for Field {
 		if let Some(attr) = attr {
 			let attr = attr.unwrap_or_default();
 			Ok(Field::Attribute(FieldAttribute {
-				key: attr.key.unwrap_or_else(|| ident.to_string()),
+				key: attr.key,
 				is_string: infer_type::as_ref_str(&ty),
 				optional: attr.optional.unwrap_or_else(|| infer_type::option(&ty)),
 				ident,
@@ -160,7 +168,7 @@ impl FromField for Field {
 			}))
 		} else if attr_string.is_some() {
 			Ok(Field::Attribute(FieldAttribute {
-				key: ident.to_string(),
+				key: None,
 				is_string: true,
 				optional: false,
 				ident,
@@ -200,21 +208,21 @@ fn default_crate_path() -> Path {
 
 #[derive(FromDeriveInput)]
 #[darling(attributes(xml_data), supports(struct_named, struct_unit))]
-pub struct ElementInput {
-	pub ident: Ident,
-	pub data: ast::Data<(), Field>,
+struct XmlElementReceiver {
+	ident: Ident,
+	data: ast::Data<(), Field>,
 	/// If set, the XML tag name to use instead of the deriving struct ident.
 	#[darling(default)]
 	tag: Option<String>,
 	#[darling(rename = "crate", default = "default_crate_path")]
-	pub xml_data_crate: Path,
+	xml_data_crate: Path,
 	#[darling(default)]
-	pub ignore_unknown: IgnoreUnknown,
+	ignore_unknown: IgnoreUnknown,
 }
 
-impl ElementInput {
+impl XmlElementReceiver {
 	/// The XML tag name for the element during serialization and deserialization.
-	pub fn tag(&self) -> Cow<'_, str> {
+	fn tag(&self) -> Cow<'_, str> {
 		if let Some(explicit_tag) = &self.tag {
 			Cow::Borrowed(explicit_tag)
 		} else {
@@ -223,65 +231,66 @@ impl ElementInput {
 	}
 
 	/// The fields of the input struct.
-	pub fn fields<'a>(&'a self) -> impl Iterator<Item = &'a Field> {
+	fn fields<'a>(&'a self) -> impl Iterator<Item = &'a Field> {
 		self.data.as_ref().take_struct().unwrap().into_iter()
 	}
+}
 
-	/// Fields of the input struct that are represented as attributes.
-	pub fn attrs<'a>(&'a self) -> impl Iterator<Item = &'a FieldAttribute> {
-		self.fields().filter_map(|field| {
-			if let Field::Attribute(attr) = field {
-				Some(attr)
-			} else {
-				None
-			}
-		})
+impl CrateRoot for XmlElementReceiver {
+	fn crate_root(&self) -> &Path {
+		&self.xml_data_crate
 	}
+}
 
-	/// Fields of the input struct that are represented as child elements.
-	pub fn elements<'a>(&'a self) -> impl Iterator<Item = &'a FieldChild> {
-		self.fields().filter_map(|field| {
-			if let Field::Child(child) = field {
-				Some(child)
-			} else {
-				None
-			}
-		})
+impl<'a> CrateRoot for &'a XmlElementReceiver {
+	fn crate_root(&self) -> &Path {
+		&self.xml_data_crate
 	}
 }
 
 #[derive(FromDeriveInput)]
 #[darling(attributes(xml_data), supports(struct_named, struct_unit))]
-pub struct InnerInput {
-	pub ident: Ident,
-	pub data: ast::Data<(), FieldChild>,
+struct XmlInnerReceiver {
+	ident: Ident,
+	data: ast::Data<(), FieldChild>,
 	#[darling(rename = "crate", default = "default_crate_path")]
-	pub xml_data_crate: Path,
+	xml_data_crate: Path,
 }
 
-impl InnerInput {
-	pub fn elements<'a>(&'a self) -> impl Iterator<Item = &'a FieldChild> {
+impl XmlInnerReceiver {
+	fn elements<'a>(&'a self) -> impl Iterator<Item = &'a FieldChild> {
 		self.data.as_ref().take_struct().unwrap().into_iter()
 	}
 }
 
-pub struct SerdeElementInput<'a> {
-	pub xml: ElementInput,
+impl CrateRoot for XmlInnerReceiver {
+	fn crate_root(&self) -> &Path {
+		&self.xml_data_crate
+	}
+}
+
+impl<'a> CrateRoot for &'a XmlInnerReceiver {
+	fn crate_root(&self) -> &Path {
+		&self.xml_data_crate
+	}
+}
+
+pub struct ElementInput<'a> {
+	xml: XmlElementReceiver,
 	pub serde: Container<'a>,
 }
 
-impl<'a> SerdeElementInput<'a> {
+impl<'a> ElementInput<'a> {
 	pub fn new(
 		input: &'a syn::DeriveInput,
 		serde_ctx: &'a Ctxt,
 	) -> Result<Self, Option<darling::Error>> {
-		let xml = ElementInput::from_derive_input(input)?;
+		let xml = XmlElementReceiver::from_derive_input(input)?;
 		let serde = Container::from_ast(serde_ctx, input, Derive::Serialize).ok_or(None)?;
-
 		Ok(Self { xml, serde })
 	}
 
-	pub fn fields(&'a self) -> impl Iterator<Item = SField<&'a Field>> {
+	pub fn fields(&'a self) -> impl Iterator<Item = SField<&'a Field, &'a ElementInput<'a>>> {
 		self.xml
 			.fields()
 			.zip(self.serde.data.all_fields())
@@ -292,29 +301,102 @@ impl<'a> SerdeElementInput<'a> {
 			})
 	}
 
-	pub fn attrs(&'a self) -> impl Iterator<Item = SField<&'a FieldAttribute>> {
+	pub fn attrs(
+		&'a self,
+	) -> impl Iterator<Item = SField<&'a FieldAttribute, &'a ElementInput<'a>>> {
 		self.fields().filter_map(|f| f.as_field_attr())
 	}
 
-	pub fn children(&'a self) -> impl Iterator<Item = SField<&'a FieldChild>> {
+	pub fn children(
+		&'a self,
+	) -> impl Iterator<Item = SField<&'a FieldChild, &'a ElementInput<'a>>> {
 		self.fields().filter_map(|f| f.as_field_child())
+	}
+
+	pub fn ident(&self) -> &Ident {
+		&self.xml.ident
+	}
+
+	pub fn ignore_unknown(&self) -> &IgnoreUnknown {
+		&self.xml.ignore_unknown
+	}
+
+	pub fn tag(&self) -> Cow<str> {
+		self.xml.tag()
 	}
 }
 
-pub struct SField<'a, T> {
-	parent: &'a SerdeElementInput<'a>,
+impl<'a> CrateRoot for &'a ElementInput<'a> {
+	fn crate_root(&self) -> &Path {
+		self.xml.crate_root()
+	}
+}
+
+impl<'a> StructDefault for &'a ElementInput<'a> {
+	fn struct_default(&self) -> &serde_derive_internals::attr::Default {
+		self.serde.attrs.default()
+	}
+}
+
+pub struct InnerInput<'a> {
+	xml: XmlInnerReceiver,
+	pub serde: Container<'a>,
+}
+
+impl<'a> InnerInput<'a> {
+	pub fn new(
+		input: &'a syn::DeriveInput,
+		serde_ctx: &'a Ctxt,
+	) -> Result<Self, Option<darling::Error>> {
+		let xml = XmlInnerReceiver::from_derive_input(input)?;
+		let serde = Container::from_ast(serde_ctx, input, Derive::Serialize).ok_or(None)?;
+
+		Ok(Self { xml, serde })
+	}
+
+	pub fn children(&'a self) -> impl Iterator<Item = SField<&'a FieldChild, &'a InnerInput<'a>>> {
+		self.xml
+			.elements()
+			.zip(self.serde.data.all_fields())
+			.map(move |(x, s)| SField {
+				parent: self,
+				xml: x,
+				serde: s,
+			})
+	}
+
+	pub fn ident(&self) -> &Ident {
+		&self.xml.ident
+	}
+}
+
+impl<'a> CrateRoot for &'a InnerInput<'a> {
+	fn crate_root(&self) -> &Path {
+		self.xml.crate_root()
+	}
+}
+
+impl<'a> StructDefault for &'a InnerInput<'a> {
+	fn struct_default(&self) -> &serde_derive_internals::attr::Default {
+		self.serde.attrs.default()
+	}
+}
+
+#[derive(Clone, Copy)]
+pub struct SField<'a, T, P> {
+	parent: P,
 	pub xml: T,
 	pub serde: &'a serde_derive_internals::ast::Field<'a>,
 }
 
-impl<'a, T> SField<'a, T> {
-	pub fn xml_data_crate(&self) -> &Path {
-		&self.parent.xml.xml_data_crate
+impl<'a, T, P> SField<'a, T, P> {
+	pub fn name(&self) -> &Name {
+		self.serde.attrs.name()
 	}
 }
 
-impl<'a> SField<'a, &'a Field> {
-	pub fn as_field_attr(&self) -> Option<SField<'a, &'a FieldAttribute>> {
+impl<'a, P: Copy> SField<'a, &'a Field, P> {
+	pub fn as_field_attr(&self) -> Option<SField<'a, &'a FieldAttribute, P>> {
 		if let Field::Attribute(attr) = self.xml {
 			Some(SField {
 				parent: self.parent,
@@ -326,7 +408,7 @@ impl<'a> SField<'a, &'a Field> {
 		}
 	}
 
-	pub fn as_field_child(&self) -> Option<SField<'a, &'a FieldChild>> {
+	pub fn as_field_child(&self) -> Option<SField<'a, &'a FieldChild, P>> {
 		if let Field::Child(child) = self.xml {
 			Some(SField {
 				parent: self.parent,
@@ -339,13 +421,34 @@ impl<'a> SField<'a, &'a Field> {
 	}
 }
 
-impl<'a, T: Spanned> Spanned for SField<'a, &'a T> {
+impl<P> SField<'_, &'_ FieldAttribute, P> {
+	/// Get whether the attribute is optional. This will be true if the type is inferred to be
+	/// `Option` or if `#[xml(attr(optional = true))]`. This can be suppressed by setting `optional`
+	/// to `false`.
+	pub fn is_optional(&self) -> bool {
+		self.xml.optional
+	}
+}
+
+impl<'a, T, P: StructDefault> StructDefault for SField<'a, T, P> {
+	fn struct_default(&self) -> &serde_derive_internals::attr::Default {
+		self.parent.struct_default()
+	}
+}
+
+impl<'a, T, P: CrateRoot> CrateRoot for SField<'a, T, P> {
+	fn crate_root(&self) -> &Path {
+		self.parent.crate_root()
+	}
+}
+
+impl<'a, T: Spanned, P> Spanned for SField<'a, &'a T, P> {
 	fn span(&self) -> Span {
 		self.xml.span()
 	}
 }
 
-impl<'a, T: FieldBase> FieldBase for SField<'a, &'a T> {
+impl<'a, T: FieldBase, P> FieldBase for SField<'a, &'a T, P> {
 	fn ident(&self) -> &Ident {
 		self.xml.ident()
 	}

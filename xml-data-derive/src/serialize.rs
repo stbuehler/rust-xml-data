@@ -1,90 +1,14 @@
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned, ToTokens, TokenStreamExt};
-use syn::{spanned::Spanned, Path};
+use syn::spanned::Spanned;
 
 use crate::element::{
-	self, ElementInput, FieldAttribute, FieldBase, FieldChild, InnerInput, SField,
-	SerdeElementInput,
+	CrateRoot, ElementInput, FieldAttribute, FieldBase, FieldChild, InnerInput, SField,
 };
 
-struct ElementChild<'a> {
-	data: &'a FieldChild,
-	xml_data_crate: &'a Path,
-	serializer: &'a TokenStream,
-}
+struct ElementAttribute<'a, P>(SField<'a, &'a FieldAttribute, P>);
 
-impl<'a> ElementChild<'a> {
-	fn new(data: &'a FieldChild, xml_data_crate: &'a Path, serializer: &'a TokenStream) -> Self {
-		Self {
-			data,
-			xml_data_crate,
-			serializer,
-		}
-	}
-}
-
-impl ToTokens for ElementChild<'_> {
-	fn to_tokens(&self, tokens: &mut TokenStream) {
-		let ident = &self.data.ident;
-		let Self {
-			xml_data_crate,
-			serializer,
-			..
-		} = self;
-
-		tokens.append_all(quote_spanned! {self.data.span()=>
-			#xml_data_crate::serializer::Inner::serialize_elements(&self.#ident, #serializer)?;
-		});
-	}
-}
-
-struct ElementAttribute<'a> {
-	data: &'a FieldAttribute,
-	xml_data_crate: &'a Path,
-}
-
-impl<'a> ElementAttribute<'a> {
-	fn new(data: &'a FieldAttribute, xml_data_crate: &'a Path) -> Self {
-		Self {
-			data,
-			xml_data_crate,
-		}
-	}
-}
-
-impl ToTokens for ElementAttribute<'_> {
-	fn to_tokens(&self, tokens: &mut TokenStream) {
-		let Self {
-			data,
-			xml_data_crate,
-		} = self;
-
-		let value_t = if data.is_string {
-			quote!(ValueString)
-		} else {
-			quote!(ValueDefault)
-		};
-
-		let ident = &data.ident;
-		let attr_key = &data.key;
-
-		if data.optional {
-			tokens.append_all(quote_spanned! {self.data.span()=>
-				if let Some(#ident) = &self.#ident {
-					serializer.serialize_attribute(#attr_key, #xml_data_crate::serializer::#value_t::serialize_value(#ident)?)?;
-				}
-			});
-		} else {
-			tokens.append_all(quote_spanned! {self.data.span()=>
-				serializer.serialize_attribute(#attr_key, #xml_data_crate::serializer::#value_t::serialize_value(&self.#ident)?)?;
-			});
-		}
-	}
-}
-
-struct SElementAttribute<'a>(SField<'a, &'a FieldAttribute>);
-
-impl ToTokens for SElementAttribute<'_> {
+impl<P: CrateRoot> ToTokens for ElementAttribute<'_, P> {
 	fn to_tokens(&self, tokens: &mut TokenStream) {
 		let data = &self.0;
 
@@ -92,9 +16,9 @@ impl ToTokens for SElementAttribute<'_> {
 			return;
 		}
 
-		let xml_data_crate = data.xml_data_crate();
+		let xml_data_crate = data.crate_root();
 		let ident = data.ident();
-		let attr_key = &data.xml.key;
+		let attr_key = data.name().serialize_name();
 		let value_t = if data.xml.is_string {
 			quote!(ValueString)
 		} else {
@@ -125,12 +49,12 @@ impl ToTokens for SElementAttribute<'_> {
 	}
 }
 
-struct SElementChild<'a> {
-	data: SField<'a, &'a FieldChild>,
+struct ElementChild<'a, P> {
+	data: SField<'a, &'a FieldChild, P>,
 	serializer: &'a TokenStream,
 }
 
-impl ToTokens for SElementChild<'_> {
+impl<P: CrateRoot> ToTokens for ElementChild<'_, P> {
 	fn to_tokens(&self, tokens: &mut TokenStream) {
 		let Self { data, serializer } = self;
 
@@ -138,7 +62,7 @@ impl ToTokens for SElementChild<'_> {
 			return;
 		}
 
-		let xml_data_crate = data.xml_data_crate();
+		let xml_data_crate = data.crate_root();
 		let ident = data.ident();
 
 		let serialize_expr = quote_spanned! {data.span()=>
@@ -157,53 +81,19 @@ impl ToTokens for SElementChild<'_> {
 	}
 }
 
-pub fn s_derive_fixed(el: &SerdeElementInput) -> TokenStream {
+pub fn derive_element(el: &ElementInput) -> TokenStream {
 	let serializer = quote!(&mut serializer);
-	let el_attrs = el.attrs().map(SElementAttribute).collect::<Vec<_>>();
+	let el_attrs = el.attrs().map(ElementAttribute).collect::<Vec<_>>();
 	let el_body = el
 		.children()
-		.map(|data| SElementChild {
+		.map(|data| ElementChild {
 			data,
 			serializer: &serializer,
 		})
 		.collect::<Vec<_>>();
 
-	let xml_data_crate = &el.xml.xml_data_crate;
-	let ident = &el.xml.ident;
-	let tag = el.xml.tag();
-
-	quote! {
-		impl #xml_data_crate::serializer::FixedElement for #ident {
-			const TAG: &'static str = #tag;
-
-			fn serialize<S: #xml_data_crate::serializer::Serializer>(&self, mut serializer: S) -> #xml_data_crate::Result<()> {
-				use #xml_data_crate::serializer::Value;
-				#(#el_attrs)*
-				#(#el_body)*
-				Ok(())
-			}
-		}
-	}
-}
-
-pub fn derive_fixed_element(el: &element::ElementInput) -> TokenStream {
-	let serializer = quote!(&mut serializer);
-	let xml_data_crate = &el.xml_data_crate;
-	let el_attrs = el
-		.attrs()
-		.map(|field| ElementAttribute::new(field, xml_data_crate))
-		.collect::<Vec<_>>();
-	let el_body = el
-		.elements()
-		.map(|field| ElementChild::new(field, xml_data_crate, &serializer))
-		.collect::<Vec<_>>();
-
-	let ElementInput {
-		xml_data_crate,
-		ident,
-		..
-	} = el;
-
+	let xml_data_crate = el.crate_root();
+	let ident = el.ident();
 	let tag = el.tag();
 
 	quote! {
@@ -222,20 +112,19 @@ pub fn derive_fixed_element(el: &element::ElementInput) -> TokenStream {
 
 pub fn derive_inner(el: &InnerInput) -> TokenStream {
 	let serializer = quote!(serializer);
-	let xml_data_crate = &el.xml_data_crate;
+	let crate_root = el.crate_root();
+	let ident = el.ident();
 	let children = el
-		.elements()
-		.map(|field| ElementChild::new(field, xml_data_crate, &serializer))
+		.children()
+		.map(|data| ElementChild {
+			data,
+			serializer: &serializer,
+		})
 		.collect::<Vec<_>>();
-	let InnerInput {
-		ident,
-		xml_data_crate,
-		..
-	} = el;
 
 	quote! {
-		impl #xml_data_crate::serializer::Inner for #ident {
-			fn serialize_elements<S: #xml_data_crate::serializer::Serializer>(&self, serializer: &mut S) -> #xml_data_crate::Result<()> {
+		impl #crate_root::serializer::Inner for #ident {
+			fn serialize_elements<S: #crate_root::serializer::Serializer>(&self, serializer: &mut S) -> #crate_root::Result<()> {
 				#(#children)*
 				Ok(())
 			}

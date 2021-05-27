@@ -8,6 +8,7 @@ use xml_data::{quick_xml::serialize_document, Element};
 #[xml_data(tag = "datum")]
 pub struct Data {
 	#[xml_data(attr_string)]
+	#[serde(skip_serializing_if = "str::is_empty")]
 	pub key: Cow<'static, str>,
 	#[xml_data(attr)]
 	pub other: u32,

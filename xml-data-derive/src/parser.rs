@@ -1,4 +1,6 @@
-use crate::element::{ElementInput, FieldAttribute, FieldChild, InnerInput};
+use crate::element::{
+	CrateRoot, ElementInput, FieldAttribute, FieldBase, FieldChild, InnerInput, SField,
+};
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned, ToTokens, TokenStreamExt};
 use syn::{spanned::Spanned, Path};
@@ -7,32 +9,19 @@ mod state;
 
 use state::State;
 
-struct AttrExtractor<'a> {
-	data: &'a FieldAttribute,
-	xml_data_crate: &'a Path,
-}
+struct AttrExtractor<'a, P>(SField<'a, &'a FieldAttribute, P>);
 
-impl<'a> AttrExtractor<'a> {
-	fn new(data: &'a FieldAttribute, xml_data_crate: &'a Path) -> Self {
-		Self {
-			data,
-			xml_data_crate,
-		}
-	}
-}
-
-impl ToTokens for AttrExtractor<'_> {
+impl<P: CrateRoot> ToTokens for AttrExtractor<'_, P> {
 	fn to_tokens(&self, tokens: &mut TokenStream) {
-		let Self {
-			data,
-			xml_data_crate,
-		} = self;
-		let value_type = data.value_type();
-		let attr_key = &data.key;
-		let ident = &data.ident;
+		let data = &self.0;
+		let root = data.crate_root();
+		let value_type = data.xml.value_type();
+		let attr_key = data.name().deserialize_name();
+		let ident = data.ident();
+
 		tokens.append_all(quote_spanned! {data.span()=>
 			if #attr_key == key && self.#ident.is_none() {
-				self.#ident = Some(#xml_data_crate::parser::#value_type::parse_value(value)?);
+				self.#ident = Some(#root::parser::#value_type::parse_value(value)?);
 				return Ok(());
 			}
 		});
@@ -45,28 +34,31 @@ enum ParseMode {
 }
 
 /// Node and text extractors for fields represented as children in XML.
-struct ChildExtractors<'a> {
-	fields: Vec<&'a FieldChild>,
+struct ChildExtractors<'a, P> {
+	fields: Vec<SField<'a, &'a FieldChild, P>>,
 	/// Tokens defining `Ok` return value
 	success: TokenStream,
 }
 
-impl<'a> ChildExtractors<'a> {
-	fn new(fields: impl IntoIterator<Item = &'a FieldChild>, success: TokenStream) -> Self {
+impl<'a, P: Copy> ChildExtractors<'a, P> {
+	fn new(
+		fields: impl IntoIterator<Item = SField<'a, &'a FieldChild, P>>,
+		success: TokenStream,
+	) -> Self {
 		Self {
 			fields: fields.into_iter().collect(),
 			success,
 		}
 	}
 
-	fn nodes(&'a self) -> Vec<ChildExtractor<'a>> {
+	fn nodes(&'a self) -> Vec<ChildExtractor<'a, P>> {
 		self.fields
 			.iter()
 			.map(|v| ChildExtractor::node(*v, &self.success))
 			.collect()
 	}
 
-	fn text(&'a self) -> Vec<ChildExtractor<'a>> {
+	fn text(&'a self) -> Vec<ChildExtractor<'a, P>> {
 		self.fields
 			.iter()
 			.map(|v| ChildExtractor::text(*v, &self.success))
@@ -74,14 +66,14 @@ impl<'a> ChildExtractors<'a> {
 	}
 }
 
-struct ChildExtractor<'a> {
-	data: &'a FieldChild,
+struct ChildExtractor<'a, P> {
+	data: SField<'a, &'a FieldChild, P>,
 	success: &'a TokenStream,
 	mode: ParseMode,
 }
 
-impl<'a> ChildExtractor<'a> {
-	fn node(data: &'a FieldChild, success: &'a TokenStream) -> Self {
+impl<'a, P> ChildExtractor<'a, P> {
+	fn node(data: SField<'a, &'a FieldChild, P>, success: &'a TokenStream) -> Self {
 		Self {
 			data,
 			success,
@@ -89,7 +81,7 @@ impl<'a> ChildExtractor<'a> {
 		}
 	}
 
-	fn text(data: &'a FieldChild, success: &'a TokenStream) -> Self {
+	fn text(data: SField<'a, &'a FieldChild, P>, success: &'a TokenStream) -> Self {
 		Self {
 			data,
 			success,
@@ -98,10 +90,10 @@ impl<'a> ChildExtractor<'a> {
 	}
 }
 
-impl ToTokens for ChildExtractor<'_> {
+impl<P: CrateRoot> ToTokens for ChildExtractor<'_, P> {
 	fn to_tokens(&self, tokens: &mut TokenStream) {
 		let Self { data, success, .. } = self;
-		let ident = &data.ident;
+		let ident = data.ident();
 
 		tokens.append_all(match self.mode {
 			ParseMode::Node => quote_spanned! {data.span()=>
@@ -120,27 +112,20 @@ impl ToTokens for ChildExtractor<'_> {
 	}
 }
 
-pub fn derive_element_parser(input: &ElementInput) -> TokenStream {
-	let ElementInput {
-		ident,
-		xml_data_crate,
-		..
-	} = input;
-
+pub fn derive_element(input: &ElementInput) -> TokenStream {
+	let xml_data_crate = input.crate_root();
+	let ident = input.ident();
 	let tag = input.tag();
 
 	let state = State::new(ident, input.fields(), xml_data_crate);
 
-	let attr_extractors = input
-		.attrs()
-		.map(|field| AttrExtractor::new(field, xml_data_crate))
-		.collect::<Vec<_>>();
+	let attr_extractors = input.attrs().map(AttrExtractor).collect::<Vec<_>>();
 
-	let children = ChildExtractors::new(input.elements(), quote!(()));
+	let children = ChildExtractors::new(input.children(), quote!(()));
 	let child_nodes = children.nodes();
 	let child_text = children.text();
 
-	let handle_unknown_attribute = if input.ignore_unknown.attributes() {
+	let handle_unknown_attribute = if input.ignore_unknown().attributes() {
 		quote! {
 			let _ = key;
 			let _ = value;
@@ -153,7 +138,7 @@ pub fn derive_element_parser(input: &ElementInput) -> TokenStream {
 		}
 	};
 
-	let handle_unknown_element = if input.ignore_unknown.elements() {
+	let handle_unknown_element = if input.ignore_unknown().elements() {
 		quote! {
 			parser.parse_element_state(&mut IgnoreElement)
 		}
@@ -164,7 +149,7 @@ pub fn derive_element_parser(input: &ElementInput) -> TokenStream {
 		}
 	};
 
-	let handle_text = if input.ignore_unknown.text() {
+	let handle_text = if input.ignore_unknown().text() {
 		quote! {
 			let _ = text;
 		}
@@ -214,17 +199,14 @@ pub fn derive_element_parser(input: &ElementInput) -> TokenStream {
 	)
 }
 
-pub fn derive_inner_parser(input: &InnerInput) -> TokenStream {
-	let InnerInput {
-		ident,
-		xml_data_crate,
-		..
-	} = input;
+pub fn derive_inner(input: &InnerInput) -> TokenStream {
+	let ident = input.ident();
+	let xml_data_crate = input.crate_root();
 
-	let state = State::new(ident, input.elements(), xml_data_crate);
+	let state = State::new(ident, input.children(), xml_data_crate);
 
 	let children = ChildExtractors::new(
-		input.elements(),
+		input.children(),
 		quote!(#xml_data_crate::parser::InnerParseResult::Success),
 	);
 	let child_nodes = children.nodes();
