@@ -1,5 +1,5 @@
 #![allow(missing_docs)] // names should be good enough
-						//! Helper functions to generate common errors
+//! Helper functions to generate common errors
 
 use crate::Error;
 use std::fmt;
