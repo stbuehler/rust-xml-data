@@ -1,4 +1,4 @@
-[![Travis Build Status](https://travis-ci.org/stbuehler/rust-xml-data.svg?branch=master)](https://travis-ci.org/stbuehler/rust-xml-data)
+[![Rust CI](https://github.com/stbuehler/rust-xml-data/actions/workflows/rust.yml/badge.svg?branch=master&event=push)](https://github.com/stbuehler/rust-xml-data/actions/workflows/rust.yml)
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![crates.io:xml-data](https://img.shields.io/crates/v/xml-data.svg?label=crates-io%3Axml-data)](https://crates.io/crates/xml-data)
 [![crates.io:xml-data-derive](https://img.shields.io/crates/v/xml-data-derive.svg?label=crates-io%3Axml-data-derive)](https://crates.io/crates/xml-data-derive)
