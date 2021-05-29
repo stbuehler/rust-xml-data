@@ -1,139 +1,150 @@
-use crate::element::{
-	Field,
-	FieldAttribute,
-	Meta,
-};
+use crate::element::{ElementInput, FieldAttribute, FieldChild, InnerInput};
+use darling::util::SpannedValue;
 use proc_macro2::TokenStream;
-use quote::{
-	quote,
-	quote_spanned,
-};
+use quote::{quote, quote_spanned, ToTokens, TokenStreamExt};
+use syn::Path;
 
-pub fn build_parser(meta: &Meta, impl_element: bool) -> TokenStream {
-	let Meta {
-		xml_data_crate,
-		name,
-		tag,
-		..
-	} = meta;
+mod state;
 
-	let parse_success = if impl_element {
-		quote! { Ok(()) }
-	} else {
-		quote! { Ok(InnerParseResult::Success) }
-	};
+use state::State;
 
-	let state_fields: TokenStream = meta
-		.fields
-		.iter()
-		.map(|field| {
-			let Field { name, span, ty, .. } = field;
-			if let Some(attr) = &field.attr {
-				if attr.optional {
-					// already optional
-					quote_spanned! {*span=>
-						#name: #ty,
-					}
-				} else {
-					quote_spanned! {*span=>
-						#name: Option<#ty>,
-					}
-				}
-			} else {
-				// inner
-				quote_spanned! {*span=>
-					#name: <#ty as Inner>::ParseState,
-				}
+struct AttrExtractor<'a> {
+	data: SpannedValue<&'a FieldAttribute>,
+	xml_data_crate: &'a Path,
+}
+
+impl<'a> AttrExtractor<'a> {
+	fn new(data: SpannedValue<&'a FieldAttribute>, xml_data_crate: &'a Path) -> Self {
+		Self {
+			data,
+			xml_data_crate,
+		}
+	}
+}
+
+impl ToTokens for AttrExtractor<'_> {
+	fn to_tokens(&self, tokens: &mut TokenStream) {
+		let Self {
+			data,
+			xml_data_crate,
+		} = self;
+		let value_type = data.value_type();
+		let attr_key = &data.key;
+		let ident = &data.ident;
+		tokens.append_all(quote_spanned! {data.span()=>
+			if #attr_key == key && self.#ident.is_none() {
+				self.#ident = Some(#xml_data_crate::parser::#value_type::parse_value(value)?);
+				return Ok(());
 			}
-		})
-		.collect();
-	let finish: TokenStream = meta
-		.fields
-		.iter()
-		.map(|field| {
-			let Field { name, span, .. } = field;
-			if let Some(attr) = &field.attr {
-				let FieldAttribute { key: attr_key, .. } = attr;
-				if attr.optional {
-					quote_spanned! {*span=>
-						#name: self.#name,
-					}
-				} else {
-					quote_spanned! {*span=>
-						#name: match self.#name {
-							Some(v) => v,
-							None => return Err(errors::missing_attribute(#attr_key)),
-						},
-					}
-				}
-			} else {
-				// inner
-				quote_spanned! {*span=>
-					#name: self.#name.parse_inner_finish()?,
-				}
-			}
-		})
-		.collect();
+		});
+	}
+}
 
-	let el_attrs: TokenStream = meta
-		.fields
-		.iter()
-		.filter_map(|field| {
-			if let Some(attr) = &field.attr {
-				let FieldAttribute { key: attr_key, .. } = attr;
-				let Field { name, span, .. } = field;
-				let value_t = if attr.is_string {
-					quote!(ValueString)
-				} else {
-					quote!(ValueDefault)
+enum ParseMode {
+	Node,
+	Text,
+}
+
+/// Node and text extractors for fields represented as children in XML.
+struct ChildExtractors<'a> {
+	fields: Vec<SpannedValue<&'a FieldChild>>,
+	/// Tokens defining `Ok` return value
+	success: TokenStream,
+}
+
+impl<'a> ChildExtractors<'a> {
+	fn new(
+		fields: impl IntoIterator<Item = SpannedValue<&'a FieldChild>>,
+		success: TokenStream,
+	) -> Self {
+		Self {
+			fields: fields.into_iter().collect(),
+			success,
+		}
+	}
+
+	fn nodes(&'a self) -> Vec<ChildExtractor<'a>> {
+		self.fields
+			.iter()
+			.map(|v| ChildExtractor::node(*v, &self.success))
+			.collect()
+	}
+
+	fn text(&'a self) -> Vec<ChildExtractor<'a>> {
+		self.fields
+			.iter()
+			.map(|v| ChildExtractor::text(*v, &self.success))
+			.collect()
+	}
+}
+
+struct ChildExtractor<'a> {
+	data: SpannedValue<&'a FieldChild>,
+	success: &'a TokenStream,
+	mode: ParseMode,
+}
+
+impl<'a> ChildExtractor<'a> {
+	fn node(data: SpannedValue<&'a FieldChild>, success: &'a TokenStream) -> Self {
+		Self {
+			data,
+			success,
+			mode: ParseMode::Node,
+		}
+	}
+
+	fn text(data: SpannedValue<&'a FieldChild>, success: &'a TokenStream) -> Self {
+		Self {
+			data,
+			success,
+			mode: ParseMode::Text,
+		}
+	}
+}
+
+impl ToTokens for ChildExtractor<'_> {
+	fn to_tokens(&self, tokens: &mut TokenStream) {
+		let Self { data, success, .. } = self;
+		let ident = &data.ident;
+
+		tokens.append_all(match self.mode {
+			ParseMode::Node => quote_spanned! {data.span()=>
+				let parser = match self.#ident.parse_inner_node(tag, parser)? {
+					InnerParseResult::Next(p) => p,
+					InnerParseResult::Success => return Ok(#success),
 				};
-				Some(quote_spanned! {*span=>
-					if #attr_key == key && self.#name.is_none() {
-						self.#name = Some(#value_t::parse_value(value)?);
-						return Ok(())
-					}
-				})
-			} else {
-				None
-			}
-		})
-		.collect();
-	let el_inner_node: TokenStream = meta
-		.fields
-		.iter()
-		.filter_map(|field| {
-			if field.attr.is_none() {
-				let Field { name, span, .. } = field;
-				Some(quote_spanned! {*span=>
-					let parser = match self.#name.parse_inner_node(tag, parser)? {
-						InnerParseResult::Next(p) => p,
-						InnerParseResult::Success => return #parse_success,
-					};
-				})
-			} else {
-				None
-			}
-		})
-		.collect();
-	let el_inner_text: TokenStream = meta
-		.fields
-		.iter()
-		.filter_map(|field| {
-			if field.attr.is_none() {
-				let Field { name, span, .. } = field;
-				Some(quote_spanned! {*span=>
-					let text = match self.#name.parse_inner_text(text)? {
-						InnerParseResult::Next(t) => t,
-						InnerParseResult::Success => return #parse_success,
-					};
-				})
-			} else {
-				None
-			}
-		})
-		.collect();
+			},
+			ParseMode::Text => quote_spanned! {data.span()=>
+				let text = match self.#ident.parse_inner_text(text)? {
+					InnerParseResult::Next(t) => t,
+					InnerParseResult::Success => return Ok(#success),
+				};
+			},
+		});
+	}
+}
 
-	let handle_unknown_attribute = if meta.ignore_unknown_attribute {
+pub fn derive_element_parser(input: &ElementInput) -> TokenStream {
+	let ElementInput {
+		ident,
+		xml_data_crate,
+		..
+	} = input;
+
+	let tag = input.tag();
+
+	let state = State::new(ident, input.fields(), xml_data_crate);
+
+	let attr_extractors = input
+		.attrs()
+		.map(|field| AttrExtractor::new(field, xml_data_crate))
+		.collect::<Vec<_>>();
+
+	let children = ChildExtractors::new(input.elements(), quote!(()));
+	let child_nodes = children.nodes();
+	let child_text = children.text();
+
+	let handle_unknown_attribute = if input.ignore_unknown.attributes() {
 		quote! {
 			let _ = key;
 			let _ = value;
@@ -145,7 +156,8 @@ pub fn build_parser(meta: &Meta, impl_element: bool) -> TokenStream {
 			return Err(errors::unexpected_attribute(key));
 		}
 	};
-	let handle_unknown_element = if meta.ignore_unknown_attribute {
+
+	let handle_unknown_element = if input.ignore_unknown.elements() {
 		quote! {
 			parser.parse_element_state(&mut IgnoreElement)
 		}
@@ -155,7 +167,8 @@ pub fn build_parser(meta: &Meta, impl_element: bool) -> TokenStream {
 			return Err(errors::unexpected_element(tag));
 		}
 	};
-	let handle_text = if meta.ignore_text {
+
+	let handle_text = if input.ignore_unknown.text() {
 		quote! {
 			let _ = text;
 		}
@@ -167,74 +180,99 @@ pub fn build_parser(meta: &Meta, impl_element: bool) -> TokenStream {
 		}
 	};
 
-	let actual_impl = if impl_element {
+	const_enclosure(
+		xml_data_crate,
 		quote! {
+			#state
+
 			impl FixedElementState for State {
-				type Output = #name;
+				type Output = #ident;
 
 				const TAG: &'static str = #tag;
 
 				fn parse_element_attribute(&mut self, key: &str, value: Cow<'_, str>) -> Result<()> {
-					#el_attrs
+					#(#attr_extractors)*
 					#handle_unknown_attribute
 				}
 
 				fn parse_element_inner_text(&mut self, text: Cow<'_, str>) -> Result<()> {
-					#el_inner_text
+					#(#child_text)*
 					#handle_text
 					Ok(())
 				}
 
 				fn parse_element_inner_node<P: ElementParser>(&mut self, tag: &str, parser: P) -> Result<()> {
-					#el_inner_node
+					#(#child_nodes)*
 					#handle_unknown_element
 				}
 
 				fn parse_element_finish(self) -> Result<Self::Output> {
-					Ok(#name {
-						#finish
-					})
+					::std::convert::TryFrom::try_from(self)
 				}
 			}
 
-			impl Element for #name {
+			impl Element for #ident {
 				type ParseState = State;
 			}
-		}
-	} else {
+		},
+	)
+}
+
+pub fn derive_inner_parser(input: &InnerInput) -> TokenStream {
+	let InnerInput {
+		ident,
+		xml_data_crate,
+		..
+	} = input;
+
+	let state = State::new(ident, input.elements(), xml_data_crate);
+
+	let children = ChildExtractors::new(
+		input.elements(),
+		quote!(#xml_data_crate::parser::InnerParseResult::Success),
+	);
+	let child_nodes = children.nodes();
+	let child_text = children.text();
+
+	const_enclosure(
+		xml_data_crate,
 		quote! {
+			#state
+
 			impl InnerState for State {
-				type Output = #name;
+				type Output = #ident;
 
 				fn parse_inner_text<'t>(&mut self, text: Cow<'t, str>) -> Result<InnerParseResult<Cow<'t, str>>> {
-					#el_inner_text
+					#(#child_text)*
 					Ok(InnerParseResult::Next(text))
 				}
 
 				fn parse_inner_node<P: ElementParser>(&mut self, tag: &str, parser: P) -> Result<InnerParseResult<P>> {
-					#el_inner_node
+					#(#child_nodes)*
 					Ok(InnerParseResult::Next(parser))
 				}
 
 				fn parse_inner_finish(self) -> Result<Self::Output> {
-					Ok(#name {
-						#finish
-					})
+					::std::convert::TryFrom::try_from(self)
 				}
 			}
 
-			impl Inner for #name {
+			impl Inner for #ident {
 				type ParseState = State;
 			}
 
-			impl Inner for Option<#name> {
+			impl Inner for Option<#ident> {
 				type ParseState = ParseInnerOptional<State>;
 			}
-		}
-	};
+		},
+	)
+}
 
+fn const_enclosure(xml_data_crate: &Path, body: TokenStream) -> TokenStream {
 	quote! {
 		const _: () = {
+			use std::borrow::Cow;
+
 			use #xml_data_crate::{
 				parser::{
 					FixedElementState,
@@ -254,15 +292,8 @@ pub fn build_parser(meta: &Meta, impl_element: bool) -> TokenStream {
 				errors,
 				Result,
 			};
-			use std::borrow::Cow;
-			use std::string::ToString;
 
-			#[derive(Default)]
-			pub struct State {
-				#state_fields
-			}
-
-			#actual_impl
+			#body
 		};
 	}
 }

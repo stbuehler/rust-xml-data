@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 #[derive(crate::Element, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
-#[xml_data("data", crate(crate))]
+#[xml_data(tag = "data", crate = "crate")]
 pub struct Data {
 	#[xml_data(attr_string)]
 	pub key: Cow<'static, str>,
@@ -12,7 +12,7 @@ pub struct Data {
 }
 
 #[derive(crate::Inner, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
-#[xml_data(crate(crate))]
+#[xml_data(crate = "crate")]
 pub struct DataInner {
 	pub foo2: Option<Foo>,
 	pub content: String,
@@ -37,5 +37,5 @@ impl Data {
 }
 
 #[derive(crate::Element, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
-#[xml_data("foo", crate(crate), ignore_unknown)]
+#[xml_data(tag = "foo", crate = "crate", ignore_unknown)]
 pub struct Foo;
