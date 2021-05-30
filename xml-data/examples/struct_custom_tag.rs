@@ -1,16 +1,14 @@
 // use `cargo run -p xml-data --example struct_custom_tag` to run from git repository base directory
 
 use std::borrow::Cow;
-use xml_data::{
-	quick_xml::serialize_document,
-	Element,
-};
+use xml_data::{quick_xml::serialize_document, Element};
 
 /// a struct that customizes the tag name in XML serialization
 #[derive(Element)]
-#[xml_data("datum")]
+#[xml_data(tag = "datum")]
 pub struct Data {
 	#[xml_data(attr_string)]
+	#[serde(skip_serializing_if = "str::is_empty")]
 	pub key: Cow<'static, str>,
 	#[xml_data(attr)]
 	pub other: u32,

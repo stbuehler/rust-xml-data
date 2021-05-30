@@ -1,3 +1,5 @@
+#![allow(non_fmt_panic)]
+
 #[macro_use]
 extern crate version_sync;
 
